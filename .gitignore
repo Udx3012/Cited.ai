@@ -48,3 +48,8 @@ next-env.d.ts
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# agents and design system
+.agents/skills/
+design-system/cited.ai/
+
