@@ -23,6 +23,9 @@
 # misc
 .DS_Store
 *.pem
+PRD_Cited.ai.md
+AGENTS.md
+Cited.ai_landing.pdf
 
 # debug
 npm-debug.log*
@@ -39,3 +42,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/

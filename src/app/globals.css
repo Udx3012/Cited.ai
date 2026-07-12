@@ -1,26 +1,95 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-serif), ui-serif, Georgia, serif;
+
+  --color-brand-bg: #030303;
+  --color-brand-card: #09090b;
+  --color-brand-card-hover: #121214;
+  --color-brand-border: rgba(255, 255, 255, 0.05);
+  --color-brand-border-glow: rgba(69, 162, 158, 0.15);
+  --color-accent-gold: #45A29E;
+  --color-accent-gold-dark: #2c726f;
+  --color-accent-blue: #3b82f6;
+
+  --animate-glow-slow: glow 8s ease-in-out infinite alternate;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@keyframes glow {
+  0% {
+    transform: translate(0px, 0px) scale(1);
+    filter: blur(80px);
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  50% {
+    transform: translate(30px, -20px) scale(1.1);
+    filter: blur(100px);
+  }
+
+  100% {
+    transform: translate(-10px, 20px) scale(0.95);
+    filter: blur(80px);
   }
 }
 
+/* Custom premium scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #030303;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1f1f23;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2f2f35;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: #030303;
+  color: #f4f4f5;
+  overflow-x: hidden;
+}
+
+/* Glassmorphism primitives */
+.glass-panel {
+  background: rgba(9, 9, 11, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.glass-card {
+  background: rgba(15, 15, 18, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card:hover {
+  background: rgba(20, 20, 25, 0.6);
+  border-color: rgba(69, 162, 158, 0.15);
+  box-shadow: 0 10px 30px -15px rgba(0, 0, 0, 0.7),
+    0 0 40px -10px rgba(69, 162, 158, 0.03);
+}
+
+/* Glowing Mesh Overlays */
+.glow-mesh-gold {
+  background: radial-gradient(circle at 50% 50%, rgba(69, 162, 158, 0.06) 0%, transparent 60%);
+}
+
+.glow-mesh-blue {
+  background: radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.04) 0%, transparent 60%);
 }
