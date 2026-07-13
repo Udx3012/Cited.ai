@@ -119,14 +119,33 @@ async def chat_completions(payload: ChatRequest):
         context_chunks = reranked_chunks[:5]
 
         # 2. AI Guardrail: Confidence-based response filtering
+        # Check if the query is a general greeting or chit-chat first
+        def is_general_chat(query_text: str) -> bool:
+            q = query_text.strip().lower().rstrip("?.-!")
+            greetings = {"hi", "hello", "hey", "hola", "greetings", "good morning", "good afternoon", "good evening", "howdy", "yo", "sup", "hi there", "hello there", "what's up", "whats up"}
+            farewells = {"bye", "goodbye", "see you", "farewell", "cya"}
+            gratitude = {"thanks", "thank you", "thank you so much", "perfect thanks", "ok thanks", "great thanks"}
+            chitchat = {"how are you", "how's it going", "hows it going", "how are you doing", "what's new", "whats new"}
+            identity = {"who are you", "what is your name", "tell me about yourself", "what do you do", "what are you", "who created you", "who made you", "what is cited.ai", "what is cited"}
+            
+            if q in greetings or q in farewells or q in gratitude or q in chitchat or q in identity:
+                return True
+            
+            if len(q.split()) <= 2:
+                words = set(q.split())
+                if words.intersection(greetings) or words.intersection(farewells) or words.intersection(gratitude):
+                    return True
+            return False
+
         # If no chunks match, or if the top candidate has vector similarity < 0.65
         insufficient_context = False
-        if not context_chunks:
-            insufficient_context = True
-        else:
-            top_chunk = context_chunks[0]
-            if top_chunk.get("vector_score", 0.0) < 0.65 and top_chunk.get("bm25_score", 0.0) == 0.0:
+        if not is_general_chat(payload.query):
+            if not context_chunks:
                 insufficient_context = True
+            else:
+                top_chunk = context_chunks[0]
+                if top_chunk.get("vector_score", 0.0) < 0.65 and top_chunk.get("bm25_score", 0.0) == 0.0:
+                    insufficient_context = True
 
         if insufficient_context:
             logger.info("Guardrail Check: Retrieval confidence below threshold. Refusing query.")
