@@ -47,6 +47,17 @@ class QdrantService:
                 logger.info(f"Collection '{self.collection_name}' successfully created.")
             else:
                 logger.info(f"Verified Qdrant collection '{self.collection_name}' is ready.")
+
+            # Always ensure the document_id index is created to support deletion and filtering
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name="document_id",
+                    field_schema="keyword"
+                )
+                logger.info("Verified payload index on 'document_id' is active.")
+            except Exception as e:
+                logger.warning(f"Payload index creation on 'document_id' returned: {str(e)}")
         except Exception as e:
             logger.error(f"Error checking/creating Qdrant collection: {str(e)}")
             raise Exception(f"Failed to initialize Qdrant vector database storage: {str(e)}")
