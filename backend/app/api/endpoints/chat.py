@@ -137,14 +137,15 @@ async def chat_completions(payload: ChatRequest):
                     return True
             return False
 
-        # If no chunks match, or if the top candidate has vector similarity < 0.65
+        # If no chunks match, or if the maximum vector similarity among retrieved candidates is < 0.65
         insufficient_context = False
         if not is_general_chat(payload.query):
             if not context_chunks:
                 insufficient_context = True
             else:
-                top_chunk = context_chunks[0]
-                if top_chunk.get("vector_score", 0.0) < 0.65 and top_chunk.get("bm25_score", 0.0) == 0.0:
+                max_vector_score = max(c.get("vector_score", 0.0) for c in context_chunks)
+                max_bm25_score = max(c.get("bm25_score", 0.0) for c in context_chunks)
+                if max_vector_score < 0.65 and max_bm25_score == 0.0:
                     insufficient_context = True
 
         if insufficient_context:
