@@ -19,7 +19,7 @@ class BaseReranker(ABC):
 class HuggingFaceReranker(BaseReranker):
     def __init__(self, model_name: str = "BAAI/bge-reranker-base"):
         self.model_name = model_name
-        self.api_url = f"https://api-inference.huggingface.co/models/{self.model_name}"
+        self.api_url = f"https://router.huggingface.co/hf-inference/models/{self.model_name}"
         self.headers = {"Authorization": f"Bearer {settings.HF_API_KEY}"} if settings.HF_API_KEY else {}
 
     def rerank_chunks(self, query: str, chunks: List[Dict[str, Any]], max_retries: int = 5) -> List[Dict[str, Any]]:
