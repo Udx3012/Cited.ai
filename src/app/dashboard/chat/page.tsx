@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Send, MessageSquare, FileText, Check, ShieldAlert, Cpu, 
-  HelpCircle, Sparkles, ChevronRight, Zap, RefreshCw, X, Paperclip, Trash2
+  HelpCircle, Sparkles, ChevronRight, Zap, RefreshCw, X, Paperclip, Trash2, Square
 } from "lucide-react";
 
 interface Message {
@@ -33,6 +33,22 @@ export default function ChatSandbox() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputVal, setInputVal] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Stop currently executing query
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+  };
+
+  // Auto-focus input when generation completes
+  useEffect(() => {
+    if (!isGenerating) {
+      inputRef.current?.focus();
+    }
+  }, [isGenerating]);
   
   // Citations side panel state
   const [selectedCitationId, setSelectedCitationId] = useState<number | null>(null);
@@ -246,6 +262,10 @@ export default function ChatSandbox() {
   const handleSend = async () => {
     if (!inputVal.trim() || isGenerating) return;
 
+    // Instantiate AbortController for request cancellation
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     const userMsgId = String(Date.now());
     const userMsg: Message = {
       id: userMsgId,
@@ -273,6 +293,7 @@ export default function ChatSandbox() {
 
     const { backendUrl, apiKey, modelType, temperature } = getSettings();
     const startTime = Date.now();
+    let aiText = "";
 
     try {
       // Submit POST request to stream completions
@@ -287,7 +308,8 @@ export default function ChatSandbox() {
           model_type: modelType,
           temperature: temperature,
           stream: true
-        })
+        }),
+        signal: controller.signal
       });
 
       if (!res.ok) {
@@ -302,7 +324,6 @@ export default function ChatSandbox() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       
-      let aiText = "";
       let finalCitations: Citation[] = [];
       let confidenceScore = 0;
       let sufficientContext = true;
@@ -380,16 +401,28 @@ export default function ChatSandbox() {
       });
 
     } catch (err: any) {
-      console.error(err);
-      setMessages(prev => 
-        prev.map(m => m.id === aiMsgId ? { 
-          ...m, 
-          isStreaming: false, 
-          text: `Error connecting to grounding synthesis backend: ${err.message || "Unknown Connection Error"}. Please verify your FastAPI backend is running and Settings API endpoints are configured correctly.` 
-        } : m)
-      );
+      if (err.name === "AbortError") {
+        console.log("Generation aborted by the user.");
+        setMessages(prev => 
+          prev.map(m => m.id === aiMsgId ? { 
+            ...m, 
+            isStreaming: false, 
+            text: aiText || " [Generation stopped by user]"
+          } : m)
+        );
+      } else {
+        console.error(err);
+        setMessages(prev => 
+          prev.map(m => m.id === aiMsgId ? { 
+            ...m, 
+            isStreaming: false, 
+            text: `Error connecting to grounding synthesis backend: ${err.message || "Unknown Connection Error"}. Please verify your FastAPI backend is running and Settings API endpoints are configured correctly.` 
+          } : m)
+        );
+      }
     } finally {
       setIsGenerating(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -526,6 +559,7 @@ export default function ChatSandbox() {
           </label>
 
           <input 
+            ref={inputRef}
             type="text"
             value={inputVal}
             onChange={(e) => setInputVal(e.target.value)}
@@ -534,13 +568,23 @@ export default function ChatSandbox() {
             placeholder="Type your question or attach a document..."
             className="flex-1 bg-zinc-950 text-xs px-4 py-3.5 rounded-full border border-white/[0.04] focus:outline-none focus:border-[#45A29E]/30 text-zinc-200 placeholder-zinc-500 transition-all font-normal"
           />
-          <button 
-            onClick={handleSend}
-            disabled={isGenerating || !inputVal.trim()}
-            className="w-10 h-10 rounded-full bg-[#45A29E] disabled:bg-zinc-900 border border-transparent disabled:border-white/[0.04] flex items-center justify-center text-black disabled:text-zinc-400 transition-all hover:scale-105 active:scale-95 shrink-0 cursor-pointer"
-          >
-            <Send className="w-4 h-4" />
-          </button>
+          {isGenerating ? (
+            <button 
+              onClick={handleStop}
+              title="Stop Generation"
+              className="w-10 h-10 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white transition-all hover:scale-105 active:scale-95 shrink-0 cursor-pointer shadow-[0_4px_12px_rgba(239,68,68,0.2)] animate-pulse"
+            >
+              <Square className="w-4 h-4 fill-white" />
+            </button>
+          ) : (
+            <button 
+              onClick={handleSend}
+              disabled={!inputVal.trim()}
+              className="w-10 h-10 rounded-full bg-[#45A29E] disabled:bg-zinc-900 border border-transparent disabled:border-white/[0.04] flex items-center justify-center text-black disabled:text-zinc-400 transition-all hover:scale-105 active:scale-95 shrink-0 cursor-pointer"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
