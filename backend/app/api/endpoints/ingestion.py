@@ -167,15 +167,32 @@ async def get_job_status(request: Request, job_id: str):
 async def delete_document(document_id: str):
     """
     Purges document metadata and all corresponding vector chunk records from Qdrant database,
-    and rebuilds the in-memory BM25 index.
+    deletes raw document from Supabase Storage, and rebuilds the in-memory BM25 index.
     """
     try:
+        # 1. Retrieve the document name from Qdrant first so we know what filename to delete in Supabase
+        filename = qdrant_service.get_document_name(document_id)
+        
+        # 2. Purge vector points from Qdrant
         qdrant_service.delete_document_vectors(document_id)
-        # Rebuild lexical index to remove references to the deleted document
+        
+        # 3. Rebuild lexical index to remove references to the deleted document
         bm25_service.rebuild_index()
+        
+        # 4. If we found a filename in Qdrant, delete the file from Supabase Storage
+        if filename:
+            import re
+            safe_filename = re.sub(r"[^\w\.\-]", "_", filename)
+            secure_path = f"{document_id}/{safe_filename}"
+            await supabase_storage.delete_file(secure_path)
+            message = f"Document {filename} ({document_id}) and all related vector chunks purged successfully from Qdrant and Supabase Storage."
+        else:
+            logger.warning(f"Could not resolve filename for document {document_id} from Qdrant. Supabase raw file delete bypassed.")
+            message = f"Document {document_id} and all related vector chunks purged successfully from Qdrant Cloud. Supabase file delete bypassed."
+
         return IngestionStatusResponse(
             success=True,
-            message=f"Document {document_id} and all related vector chunks purged successfully from Qdrant Cloud."
+            message=message
         )
     except Exception as e:
         logger.error(f"Failed to purge document {document_id}: {str(e)}")

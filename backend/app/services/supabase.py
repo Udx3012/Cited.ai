@@ -46,4 +46,25 @@ class SupabaseStorageService:
                 logger.error(f"Network error during Supabase upload: {str(e)}")
                 raise Exception(f"Failed to upload document file to Supabase cloud storage: {str(e)}")
 
+    async def delete_file(self, file_path: str) -> None:
+        """
+        Deletes a file from the Supabase Storage bucket.
+        """
+        if not self.url or not self.key or not self.bucket:
+            logger.warning(f"[Mock Delete] Would delete file from Supabase storage path: {self.bucket}/{file_path}")
+            return
+            
+        endpoint = f"{self.url}/storage/v1/object/{self.bucket}/{file_path}"
+        
+        logger.info(f"Deleting file from Supabase storage path: {self.bucket}/{file_path}")
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.delete(endpoint, headers=self.headers, timeout=30.0)
+                if response.status_code not in (200, 204):
+                    logger.error(f"Supabase delete failed: {response.status_code} - {response.text}")
+                else:
+                    logger.info("Supabase storage file deleted successfully.")
+            except Exception as e:
+                logger.error(f"Network error during Supabase delete: {str(e)}")
+
 supabase_storage = SupabaseStorageService()

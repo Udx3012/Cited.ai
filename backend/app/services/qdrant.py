@@ -107,6 +107,34 @@ class QdrantService:
             logger.error(f"Failed to upsert points to Qdrant: {str(e)}")
             raise Exception(f"Qdrant Database indexing failed: {str(e)}")
 
+    def get_document_name(self, document_id: str) -> str | None:
+        """
+        Retrieves the document_name associated with the given document_id from indexed vectors.
+        """
+        if not self.client:
+            return None
+        try:
+            points, _ = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="document_id",
+                            match=MatchValue(value=document_id)
+                        )
+                    ]
+                ),
+                limit=1,
+                with_payload=True,
+                with_vectors=False
+            )
+            if points and points[0].payload:
+                return points[0].payload.get("document_name")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to retrieve document name from Qdrant: {str(e)}")
+            return None
+
     def delete_document_vectors(self, document_id: str) -> None:
         """
         Deletes all vector points associated with the specified document_id.
