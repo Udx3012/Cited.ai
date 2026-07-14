@@ -352,7 +352,7 @@ export default function ChatSandbox() {
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-xs font-semibold text-zinc-300">RAG Agent Ready</span>
           </div>
-          <span className="text-[10px] text-zinc-400 font-mono">Model: 70B AI judge enabled</span>
+          <span className="text-xs text-zinc-400 font-mono">Model: 70B AI judge enabled</span>
         </div>
 
         {/* Messages viewport */}
@@ -365,7 +365,7 @@ export default function ChatSandbox() {
                 className={`flex flex-col ${isAi ? "items-start text-left" : "items-end text-right"}`}
               >
                 <div 
-                  className={`px-4 py-3 rounded-2xl text-xs leading-relaxed max-w-xl ${
+                  className={`px-4 py-3.5 rounded-2xl text-sm leading-relaxed max-w-xl ${
                     isAi 
                       ? "bg-zinc-950/80 border border-white/[0.03] text-zinc-200 rounded-tl-none font-normal" 
                       : "bg-[#45A29E]/10 border border-[#45A29E]/20 text-[#45A29E] rounded-tr-none font-medium"
@@ -405,7 +405,7 @@ export default function ChatSandbox() {
 
                 {/* Sub-text details (Latency, Faithfulness) */}
                 {isAi && m.latency && !m.isStreaming && (
-                  <div className="flex items-center gap-3 text-[9px] text-zinc-400 font-mono mt-1.5 ml-2 font-normal">
+                  <div className="flex items-center gap-3 text-xs text-zinc-400 font-mono mt-2 ml-2">
                     <span className="flex items-center gap-1">
                       <Zap className="w-3 h-3 text-[#45A29E]" />
                       Latency: {m.latency}
@@ -509,45 +509,45 @@ export default function ChatSandbox() {
             {/* Citation Details Card */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 text-left">
               {/* Document location pills */}
-              <div className="space-y-1.5">
-                <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Source details</span>
-                <div className="flex flex-wrap gap-2 text-[10px] font-mono text-[#45A29E]">
-                  <span className="px-2 py-0.5 bg-[#45A29E]/5 border border-[#45A29E]/10 rounded font-semibold max-w-[200px] truncate" title={citationMap[selectedCitationId]?.source}>
+              <div className="space-y-2">
+                <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider block">Source Details</span>
+                <div className="flex flex-wrap gap-2 text-xs font-mono text-[#45A29E]">
+                  <span className="px-2.5 py-1 bg-[#45A29E]/5 border border-[#45A29E]/10 rounded-md font-semibold max-w-[200px] truncate" title={citationMap[selectedCitationId]?.source}>
                     {citationMap[selectedCitationId]?.source}
                   </span>
-                  <span className="px-2 py-0.5 bg-zinc-950 border border-white/[0.03] rounded text-zinc-400">
+                  <span className="px-2.5 py-1 bg-zinc-950 border border-white/[0.06] rounded-md text-zinc-300 font-medium">
                     Page {citationMap[selectedCitationId]?.page}
                   </span>
-                  <span className="px-2 py-0.5 bg-zinc-950 border border-white/[0.03] rounded text-zinc-400">
+                  <span className="px-2.5 py-1 bg-zinc-950 border border-white/[0.06] rounded-md text-zinc-300 font-medium">
                     Chunk {citationMap[selectedCitationId]?.chunk}
                   </span>
                 </div>
               </div>
 
               {/* RAG pipeline Scores */}
-              <div className="space-y-2 pt-2 border-t border-white/[0.03]">
-                <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Matching scores</span>
+              <div className="space-y-2.5 pt-3 border-t border-white/[0.04]">
+                <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider block">Matching Scores</span>
                 
                 <div className="grid grid-cols-3 gap-2 text-center font-mono">
-                  <div className="p-2 bg-zinc-950 rounded-lg border border-white/[0.02]">
-                    <span className="text-[9px] text-zinc-400 block mb-0.5">Vector</span>
-                    <span className="text-[10px] font-bold text-zinc-300">{citationMap[selectedCitationId]?.score}</span>
+                  <div className="p-2.5 bg-zinc-950 rounded-lg border border-white/[0.04]">
+                    <span className="text-xs text-zinc-400 block mb-1">Vector</span>
+                    <span className="text-sm font-bold text-zinc-200">{citationMap[selectedCitationId]?.score}</span>
                   </div>
-                  <div className="p-2 bg-zinc-950 rounded-lg border border-white/[0.02]">
-                    <span className="text-[9px] text-zinc-400 block mb-0.5">BM25</span>
-                    <span className="text-[10px] font-bold text-zinc-300">{citationMap[selectedCitationId]?.bm25}</span>
+                  <div className="p-2.5 bg-zinc-950 rounded-lg border border-white/[0.04]">
+                    <span className="text-xs text-zinc-400 block mb-1">BM25</span>
+                    <span className="text-sm font-bold text-zinc-200">{citationMap[selectedCitationId]?.bm25}</span>
                   </div>
-                  <div className="p-2 bg-zinc-950 rounded-lg border border-white/[0.02]">
-                    <span className="text-[9px] text-zinc-400 block mb-0.5">Reranker</span>
-                    <span className="text-[10px] font-bold text-zinc-300">{citationMap[selectedCitationId]?.rerank}</span>
+                  <div className="p-2.5 bg-zinc-950 rounded-lg border border-white/[0.04]">
+                    <span className="text-xs text-zinc-400 block mb-1">Reranker</span>
+                    <span className="text-sm font-bold text-zinc-200">{citationMap[selectedCitationId]?.rerank}</span>
                   </div>
                 </div>
               </div>
 
               {/* Matched text snippet */}
-              <div className="space-y-1.5 pt-2 border-t border-white/[0.03]">
-                <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Context payload</span>
-                <div className="p-3 bg-zinc-950 border border-white/[0.03] rounded-xl text-xs text-zinc-300 leading-relaxed font-normal font-sans">
+              <div className="space-y-2 pt-3 border-t border-white/[0.04]">
+                <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider block">Context Payload</span>
+                <div className="p-3.5 bg-zinc-950 border border-white/[0.04] rounded-xl text-sm text-zinc-300 leading-relaxed font-normal font-sans">
                   &ldquo;{citationMap[selectedCitationId]?.text}&rdquo;
                 </div>
               </div>

@@ -60,6 +60,16 @@ body {
   background-color: #030303;
   color: #f4f4f5;
   overflow-x: hidden;
+  font-feature-settings: "cv11", "ss01";  /* Inter: cleaner lowercase l, a */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tabular numbers for all numeric/monospace dashboard values */
+.font-mono,
+[class*="font-mono"] {
+  font-feature-settings: "tnum", "cv11";
 }
 
 /* Glassmorphism primitives */

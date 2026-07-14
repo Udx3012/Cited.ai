@@ -270,12 +270,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </div>
                   <div className="space-y-3">
                     {notifications.map((item) => (
-                      <div key={item.id} className="text-left text-xs pb-2 border-b border-white/[0.02] last:border-0 last:pb-0">
-                        <div className="flex justify-between font-medium text-zinc-200">
+                      <div key={item.id} className="text-left pb-3 border-b border-white/[0.03] last:border-0 last:pb-0">
+                        <div className="flex justify-between font-medium text-zinc-200 text-xs">
                           <span>{item.title}</span>
-                          <span className="text-[10px] text-zinc-400 font-normal">{item.time}</span>
+                          <span className="text-xs text-zinc-400 font-normal">{item.time}</span>
                         </div>
-                        <p className="text-zinc-400 mt-1 leading-relaxed">{item.desc}</p>
+                        <p className="text-zinc-400 mt-1.5 text-xs leading-relaxed">{item.desc}</p>
                       </div>
                     ))}
                   </div>
@@ -358,7 +358,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   {/* Categorized rendering */}
                   {Array.from(new Set(filteredCmdItems.map(i => i.category))).map(cat => (
                     <div key={cat} className="space-y-1">
-                      <span className="text-[9px] font-bold text-zinc-400 tracking-widest block px-3 pt-2 uppercase">
+                      <span className="text-[10px] font-bold text-zinc-400 tracking-widest block px-3 pt-2 uppercase">
                         {cat}
                       </span>
                       {filteredCmdItems.filter(i => i.category === cat).map((item, idx) => (

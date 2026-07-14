@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Instrument_Serif, Raleway } from "next/font/google";
+import { Instrument_Serif, Inter } from "next/font/google";
 import "./globals.css";
 
 const instrumentSerif = Instrument_Serif({
@@ -10,10 +10,10 @@ const instrumentSerif = Instrument_Serif({
   display: "swap",
 });
 
-const raleway = Raleway({
+const inter = Inter({
   variable: "--font-sans",
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
+  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
@@ -30,7 +30,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${instrumentSerif.variable} ${raleway.variable} h-full antialiased dark`}
+      className={`${instrumentSerif.variable} ${inter.variable} h-full antialiased dark`}
     >
       <body className="min-h-full flex flex-col bg-[#030303] text-zinc-100 font-sans selection:bg-[#c5a880]/30 selection:text-white">
         {children}
