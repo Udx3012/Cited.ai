@@ -47,7 +47,7 @@ class HuggingFaceEmbedder(BaseEmbedder):
                     self.api_url,
                     json=payload,
                     headers=self.headers,
-                    timeout=60.0
+                    timeout=15.0  # Fail fast — cold HF model loads > 15s should retry
                 )
 
         for attempt in range(max_retries):

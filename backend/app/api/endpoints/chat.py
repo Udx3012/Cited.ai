@@ -213,12 +213,24 @@ async def chat_completions(payload: ChatRequest):
         )
 
         # --- Step 4: Cross-Encoder Reranking (bge-reranker-base) ---
+        # Skip reranking when there are ≤3 candidates — RRF ordering is already good
+        # enough and calling HF Serverless for 3 items is wasteful.
+        # Apply an 8-second hard timeout so a cold HF model start doesn't stall the response.
         reranked_chunks = []
-        try:
-            reranked_chunks = await hf_reranker.rerank_chunks(payload.query, fused_chunks)
-        except Exception as e:
-            logger.error(f"Cross-encoder reranking failed: {str(e)}")
-            reranked_chunks = fused_chunks  # Fallback to fusion ranking order
+        if len(fused_chunks) > 3:
+            try:
+                reranked_chunks = await asyncio.wait_for(
+                    hf_reranker.rerank_chunks(payload.query, fused_chunks),
+                    timeout=8.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Reranker timed out after 8s — falling back to RRF order.")
+                reranked_chunks = fused_chunks
+            except Exception as e:
+                logger.error(f"Cross-encoder reranking failed: {str(e)}")
+                reranked_chunks = fused_chunks  # Fallback to fusion ranking order
+        else:
+            reranked_chunks = fused_chunks  # ≤3 chunks — skip reranker
 
         # Truncate context to top 5 chunks for LLM context size and prompt efficiency
         context_chunks = reranked_chunks[:5]
@@ -274,7 +286,8 @@ async def chat_completions(payload: ChatRequest):
                                     validated_citations.append({
                                         "id": cit_id,
                                         "source": chunk.get("document_name", "unknown"),
-                                        "page": chunk.get("page_number", 1),
+                                        # fusion.py stores page under key "page", not "page_number"
+                                        "page": chunk.get("page", chunk.get("page_number", 1)),
                                         "chunk": chunk.get("chunk_index", 0),
                                         "matched_text": c.get("matched_text") or chunk.get("text", "")[:200],
                                         "vector_score": chunk.get("vector_score", 0.0),
@@ -302,7 +315,8 @@ async def chat_completions(payload: ChatRequest):
                         CitationMeta(
                             id=cit_id,
                             source=chunk.get("document_name", "unknown"),
-                            page=chunk.get("page_number", 1),
+                            # fusion.py stores page under key "page", not "page_number"
+                            page=chunk.get("page", chunk.get("page_number", 1)),
                             chunk=chunk.get("chunk_index", 0),
                             matched_text=item.get("matched_text") or chunk.get("text", "")[:200]
                         )

@@ -58,7 +58,7 @@ class HuggingFaceReranker(BaseReranker):
                     self.api_url,
                     json=payload,
                     headers=self.headers,
-                    timeout=60.0
+                    timeout=8.0  # Matches the asyncio.wait_for(timeout=8) in chat.py
                 )
 
         for attempt in range(max_retries):
