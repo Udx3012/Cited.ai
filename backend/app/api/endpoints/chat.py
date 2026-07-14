@@ -241,16 +241,15 @@ async def chat_completions(payload: ChatRequest):
             if not context_chunks:
                 insufficient_context = True
             else:
+                # Log metrics for debugging, but bypass hard filtering to let the 70B LLM judge groundedness
                 max_vector_score = max(c.get("vector_score", 0.0) for c in context_chunks)
                 max_bm25_score   = max(c.get("bm25_score", 0.0) for c in context_chunks)
                 max_rerank_score = max(c.get("rerank_score", 0.0) for c in context_chunks)
-                has_signal = (
-                    max_vector_score >= 0.40
-                    or max_bm25_score > 0.0
-                    or max_rerank_score > 0.0
+                logger.info(
+                    f"Retrieval scores: vector={max_vector_score:.4f}, "
+                    f"bm25={max_bm25_score:.2f}, rerank={max_rerank_score:.4f}. "
+                    f"Bypassing guardrail threshold, delegating grounding decision to LLM."
                 )
-                if not has_signal:
-                    insufficient_context = True
 
         if insufficient_context:
             logger.info("Guardrail Check: Retrieval confidence below threshold. Refusing query.")
