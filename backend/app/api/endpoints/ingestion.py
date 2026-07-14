@@ -50,7 +50,8 @@ def sync_run_ingestion(job_id: str, document_id: str, filename: str, file_bytes:
                 batch_texts = [c["text"] for c in batch_chunks]
                 
                 # Fetch embeddings via serverless API
-                batch_embeddings = hf_embedder.embed_documents(batch_texts)
+                # embed_documents is async; use asyncio.run() since this worker runs in a sync background thread
+                batch_embeddings = asyncio.run(hf_embedder.embed_documents(batch_texts))
                 embeddings.extend(batch_embeddings)
                 
                 # Incrementally scale progress from 55% to 85%

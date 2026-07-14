@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
+import asyncio
 import httpx
 import time
 import logging
@@ -9,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class BaseReranker(ABC):
     @abstractmethod
-    def rerank_chunks(self, query: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def rerank_chunks(self, query: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Takes a query and a list of chunks, calculates cross-encoder relevance scores,
         attaches them as 'rerank_score', and returns them.
@@ -22,10 +23,11 @@ class HuggingFaceReranker(BaseReranker):
         self.api_url = f"https://router.huggingface.co/hf-inference/models/{self.model_name}"
         self.headers = {"Authorization": f"Bearer {settings.HF_API_KEY}"} if settings.HF_API_KEY else {}
 
-    def rerank_chunks(self, query: str, chunks: List[Dict[str, Any]], max_retries: int = 5) -> List[Dict[str, Any]]:
+    async def rerank_chunks(self, query: str, chunks: List[Dict[str, Any]], max_retries: int = 5) -> List[Dict[str, Any]]:
         """
         Queries Hugging Face Serverless Inference for Cross-Encoder scoring.
         Applies exponential backoff retries on rate limits (429) or model loading (503).
+        Runs in a thread pool executor to avoid blocking FastAPI's async event loop.
         """
         if not chunks:
             return []
@@ -38,7 +40,7 @@ class HuggingFaceReranker(BaseReranker):
 
         # Extract text snippets to rank against the query
         sentences = [c["text"] for c in chunks]
-        
+
         payload = {
             "inputs": {
                 "source_sentence": query,
@@ -47,52 +49,56 @@ class HuggingFaceReranker(BaseReranker):
         }
 
         logger.info(f"Requesting rerank scores from HF Inference API for {len(chunks)} chunks...")
-        
+
+        loop = asyncio.get_event_loop()
+
+        def _sync_rerank() -> Any:
+            with httpx.Client() as client:
+                return client.post(
+                    self.api_url,
+                    json=payload,
+                    headers=self.headers,
+                    timeout=60.0
+                )
+
         for attempt in range(max_retries):
             try:
-                with httpx.Client() as client:
-                    response = client.post(
-                        self.api_url, 
-                        json=payload, 
-                        headers=self.headers, 
-                        timeout=60.0
-                    )
-                
+                response = await loop.run_in_executor(None, _sync_rerank)
+
                 if response.status_code == 200:
                     data = response.json()
                     scores = self._parse_rerank_scores(data, len(chunks))
-                    
+
                     # Attach scores to chunk records
                     for chunk, score in zip(chunks, scores):
                         chunk["rerank_score"] = score
-                    
+
                     # Sort chunks descending by rerank score
                     chunks.sort(key=lambda x: x["rerank_score"], reverse=True)
                     logger.info("Successfully reranked chunks using BAAI/bge-reranker-base.")
                     return chunks
-                
+
                 elif response.status_code == 503:
                     delay = 2 ** attempt
                     logger.warning(f"HF reranker model is loading (503). Retrying in {delay}s...")
-                    time.sleep(delay)
-                
+                    await asyncio.sleep(delay)
+
                 elif response.status_code == 429:
                     delay = 2 ** attempt + 1
                     logger.warning(f"HF reranker rate limit hit (429). Retrying in {delay}s...")
-                    time.sleep(delay)
-                    
+                    await asyncio.sleep(delay)
+
                 else:
                     raise Exception(f"HF API returned error {response.status_code}: {response.text}")
-                    
+
             except Exception as e:
                 logger.error(f"Error calling Hugging Face reranker: {str(e)}")
                 if attempt == max_retries - 1:
                     logger.warning("Falling back to pre-existing fusion scores due to HF rerank failure.")
-                    # Fallback: preserve original order
                     return chunks
                 delay = 2 ** attempt
-                time.sleep(delay)
-                
+                await asyncio.sleep(delay)
+
         # Safe fallback in case of loop termination without return
         return chunks
 

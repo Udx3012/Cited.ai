@@ -26,7 +26,7 @@ async def query_hybrid_retrieval(payload: RetrievalRequest):
         if qdrant_service.client:
             try:
                 # Vectorize the search query using HuggingFace bge-large-en-v1.5
-                query_vectors = hf_embedder.embed_documents([payload.query])
+                query_vectors = await hf_embedder.embed_documents([payload.query])
                 if query_vectors:
                     query_vector = query_vectors[0]
                     

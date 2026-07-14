@@ -15,6 +15,69 @@ from app.services.groq import groq_service
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+def is_general_chat(query_text: str) -> bool:
+    """
+    Returns True if the query is a greeting, farewell, gratitude, chit-chat,
+    identity question, or app-meta question that does not require document retrieval.
+
+    Handles:
+    - Exact match greetings / farewells / gratitude ("hello", "thanks")
+    - Short (<=2 word) queries containing greeting tokens ("hey there")
+    - Greeting-prefixed questions ("hey, can i upload a doc?")
+    - App-capability / meta questions ("how do i upload?", "can i add a pdf?")
+    """
+    import re
+    q = query_text.strip().lower()
+    q_stripped = q.rstrip("?.-!")
+
+    greeting_tokens = {"hi", "hello", "hey", "hola", "greetings", "howdy", "yo", "sup"}
+    farewell_tokens = {"bye", "goodbye", "farewell", "cya"}
+    gratitude_tokens = {"thanks", "thank"}
+
+    greetings = greeting_tokens | {"good morning", "good afternoon", "good evening", "hi there", "hello there", "what's up", "whats up"}
+    farewells  = farewell_tokens | {"see you"}
+    gratitude  = {"thanks", "thank you", "thank you so much", "perfect thanks", "ok thanks", "great thanks"}
+    chitchat   = {"how are you", "how's it going", "hows it going", "how are you doing", "what's new", "whats new"}
+    identity   = {
+        "who are you", "what is your name", "tell me about yourself",
+        "what do you do", "what are you", "who created you", "who made you",
+        "what is cited.ai", "what is cited"
+    }
+
+    # 1. Exact match
+    if q_stripped in greetings | farewells | gratitude | chitchat | identity:
+        return True
+
+    # 2. Short query (<=2 words) containing a greeting/farewell/gratitude token
+    words = q_stripped.split()
+    if len(words) <= 2:
+        word_set = set(words)
+        if word_set & greeting_tokens or word_set & farewell_tokens or word_set & gratitude_tokens:
+            return True
+
+    # 3. Greeting-prefixed question: starts with a greeting word, then has more content
+    #    e.g. "hey, can i upload a doc" / "hello what can you do"
+    first_word = words[0].rstrip(",!") if words else ""
+    if first_word in greeting_tokens and len(words) > 1:
+        return True
+
+    # 4. App-meta / capability questions — about Cited.ai features, not document content
+    app_meta_patterns = [
+        r"\b(upload|add|attach|import)\b.{0,30}\b(doc|document|pdf|file|paper)\b",
+        r"\b(doc|document|pdf|file|paper)\b.{0,30}\b(upload|add|attach|import)\b",
+        r"\bhow (do|can|does|should) (i|we|you)\b",
+        r"\bcan (i|we|you)\b.{0,20}\b(upload|search|use|ask|chat|query|add|delete|remove)\b",
+        r"\bwhat (can|does|do) (you|this|cited(\.ai)?)\b",
+        r"\bsupported (file|format|type)\b",
+        r"\b(how|what).{0,20}\b(work|feature|function|capability|able to)\b",
+    ]
+    for pattern in app_meta_patterns:
+        if re.search(pattern, q):
+            return True
+
+    return False
+
+
 @router.post("/completions")
 async def chat_completions(payload: ChatRequest):
     """
@@ -58,12 +121,36 @@ async def chat_completions(payload: ChatRequest):
             )
 
     try:
+        # --- Early Exit: General Chat / Greetings ---
+        # Skip the entire retrieval pipeline for greetings, chit-chat, and identity queries.
+        # These do NOT need embeddings, Qdrant search, BM25, or reranking.
+        if is_general_chat(payload.query):
+            logger.info("General chat query detected. Skipping retrieval pipeline.")
+            context_chunks = []
+            if payload.stream:
+                async def sse_general_chat_stream():
+                    async for event in groq_service.generate_grounded_answer_stream(payload.query, context_chunks):
+                        yield f"data: {json.dumps(event)}\n\n"
+                return StreamingResponse(sse_general_chat_stream(), media_type="text/event-stream")
+            else:
+                rag_output = await groq_service.generate_grounded_answer(payload.query, context_chunks)
+                total_latency = int((time.perf_counter() - start_time) * 1000)
+                logger.info(f"General chat answered in {total_latency}ms.")
+                return ChatResponse(
+                    success=True,
+                    answer=rag_output.get("answer", ""),
+                    citations=[],
+                    confidence_score=1.0,
+                    sufficient_context=True,
+                    latency_ms=total_latency
+                )
+
         # --- Step 1: Dense Retrieval (Qdrant Cloud) ---
         dense_results = []
         if qdrant_service.client:
             try:
                 # Vectorize search query (dimension: 1024)
-                query_vectors = hf_embedder.embed_documents([payload.query])
+                query_vectors = await hf_embedder.embed_documents([payload.query])
                 if query_vectors:
                     query_vector = query_vectors[0]
                     search_results = qdrant_service.client.search(
@@ -110,7 +197,7 @@ async def chat_completions(payload: ChatRequest):
         # --- Step 4: Cross-Encoder Reranking (bge-reranker-base) ---
         reranked_chunks = []
         try:
-            reranked_chunks = hf_reranker.rerank_chunks(payload.query, fused_chunks)
+            reranked_chunks = await hf_reranker.rerank_chunks(payload.query, fused_chunks)
         except Exception as e:
             logger.error(f"Cross-encoder reranking failed: {str(e)}")
             reranked_chunks = fused_chunks  # Fallback to fusion ranking order
@@ -119,24 +206,6 @@ async def chat_completions(payload: ChatRequest):
         context_chunks = reranked_chunks[:5]
 
         # 2. AI Guardrail: Confidence-based response filtering
-        # Check if the query is a general greeting or chit-chat first
-        def is_general_chat(query_text: str) -> bool:
-            q = query_text.strip().lower().rstrip("?.-!")
-            greetings = {"hi", "hello", "hey", "hola", "greetings", "good morning", "good afternoon", "good evening", "howdy", "yo", "sup", "hi there", "hello there", "what's up", "whats up"}
-            farewells = {"bye", "goodbye", "see you", "farewell", "cya"}
-            gratitude = {"thanks", "thank you", "thank you so much", "perfect thanks", "ok thanks", "great thanks"}
-            chitchat = {"how are you", "how's it going", "hows it going", "how are you doing", "what's new", "whats new"}
-            identity = {"who are you", "what is your name", "tell me about yourself", "what do you do", "what are you", "who created you", "who made you", "what is cited.ai", "what is cited"}
-            
-            if q in greetings or q in farewells or q in gratitude or q in chitchat or q in identity:
-                return True
-            
-            if len(q.split()) <= 2:
-                words = set(q.split())
-                if words.intersection(greetings) or words.intersection(farewells) or words.intersection(gratitude):
-                    return True
-            return False
-
         # If no chunks match, or if the maximum vector similarity among retrieved candidates is < 0.65
         insufficient_context = False
         if not is_general_chat(payload.query):
