@@ -879,13 +879,13 @@ export default function DocumentsLibrary() {
             {/* Action buttons */}
             <div className="flex justify-end gap-3">
               <Dialog.Close asChild>
-                <button className="px-4 py-2 rounded-full bg-zinc-900 border border-white/[0.06] hover:border-white/[0.1] text-xs font-semibold text-zinc-350 hover:text-white transition-colors">
+                <button className="px-4 py-2 rounded-full bg-zinc-900 border border-white/[0.06] hover:bg-zinc-800 hover:border-white/[0.1] text-xs font-semibold text-zinc-300 hover:text-white transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]">
                   Cancel
                 </button>
               </Dialog.Close>
               <button 
                 onClick={confirmDelete}
-                className="px-4 py-2 rounded-full bg-red-500 hover:bg-red-600 text-xs font-semibold text-white transition-all shadow-[0_4px_12px_rgba(239,68,68,0.15)]"
+                className="px-4 py-2 rounded-full bg-red-500 hover:bg-red-600 active:bg-red-700 text-xs font-semibold text-white transition-all shadow-[0_4px_12px_rgba(239,68,68,0.15)] cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
               >
                 Delete permanently
               </button>
