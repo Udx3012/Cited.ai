@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Send, MessageSquare, FileText, Check, ShieldAlert, Cpu, 
-  HelpCircle, Sparkles, ChevronRight, Zap, RefreshCw, X, Paperclip
+  HelpCircle, Sparkles, ChevronRight, Zap, RefreshCw, X, Paperclip, Trash2
 } from "lucide-react";
 
 interface Message {
@@ -30,21 +30,63 @@ interface Citation {
 }
 
 export default function ChatSandbox() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      sender: "ai",
-      text: "Hello! I am Cited.AI. Ask me anything grounded in your uploaded documents. Answers will arrive with verifiable page-level citations.",
-      citations: []
-    }
-  ]);
-
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputVal, setInputVal] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   
   // Citations side panel state
   const [selectedCitationId, setSelectedCitationId] = useState<number | null>(null);
   const [citationMap, setCitationMap] = useState<Record<number, Citation>>({});
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+
+  // Load chat history on mount
+  useEffect(() => {
+    const savedMessages = localStorage.getItem("cited_chat_messages");
+    const savedCitations = localStorage.getItem("cited_chat_citations");
+    if (savedMessages) {
+      try {
+        setMessages(JSON.parse(savedMessages));
+      } catch (e) {
+        console.error("Failed to parse saved chat messages:", e);
+        initializeDefaultMessage();
+      }
+    } else {
+      initializeDefaultMessage();
+    }
+    if (savedCitations) {
+      try {
+        setCitationMap(JSON.parse(savedCitations));
+      } catch (e) {
+        console.error("Failed to parse saved citations:", e);
+      }
+    }
+    setHistoryLoaded(true);
+  }, []);
+
+  const initializeDefaultMessage = () => {
+    setMessages([
+      {
+        id: "1",
+        sender: "ai",
+        text: "Hello! I am Cited.AI. Ask me anything grounded in your uploaded documents. Answers will arrive with verifiable page-level citations.",
+        citations: []
+      }
+    ]);
+  };
+
+  // Save messages history when updated
+  useEffect(() => {
+    if (historyLoaded) {
+      localStorage.setItem("cited_chat_messages", JSON.stringify(messages));
+    }
+  }, [messages, historyLoaded]);
+
+  // Save citations history when updated
+  useEffect(() => {
+    if (historyLoaded) {
+      localStorage.setItem("cited_chat_citations", JSON.stringify(citationMap));
+    }
+  }, [citationMap, historyLoaded]);
 
   // In-chat file upload states
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -74,6 +116,17 @@ export default function ChatSandbox() {
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Clear chat history handler
+  const handleClearChat = () => {
+    if (window.confirm("Are you sure you want to clear the chat history?")) {
+      initializeDefaultMessage();
+      setCitationMap({});
+      setSelectedCitationId(null);
+      localStorage.removeItem("cited_chat_messages");
+      localStorage.removeItem("cited_chat_citations");
+    }
+  };
 
   // Handle in-chat file upload via live backend API
   const handleChatFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -352,7 +405,16 @@ export default function ChatSandbox() {
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-xs font-semibold text-zinc-300">RAG Agent Ready</span>
           </div>
-          <span className="text-xs text-zinc-400 font-mono">Model: 70B AI judge enabled</span>
+          <div className="flex items-center gap-4">
+            <span className="text-xs text-zinc-400 font-mono">Model: 70B AI judge enabled</span>
+            <button
+              onClick={handleClearChat}
+              title="Clear Chat History"
+              className="p-1.5 rounded-lg hover:bg-white/[0.04] text-zinc-400 hover:text-red-400 transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-4.5 h-4.5" />
+            </button>
+          </div>
         </div>
 
         {/* Messages viewport */}
