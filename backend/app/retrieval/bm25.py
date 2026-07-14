@@ -83,31 +83,37 @@ class BM25Service:
         """
         Executes sparse keyword matching on the in-memory BM25 index.
         Returns document chunks ranked by their BM25 score.
+        The lock is held only briefly to snapshot the index/chunks references,
+        so a concurrent rebuild doesn't block scoring (and vice versa).
         """
+        # Snapshot references under lock — don't hold the lock for scoring
         with self.lock:
-            if not self.index or not self.chunks:
-                logger.debug("BM25 index is empty. Returning 0 matching candidates.")
-                return []
-            
-            tokenized_query = self._tokenize(query)
-            scores = self.index.get_scores(tokenized_query)
-            
-            results = []
-            for idx, score in enumerate(scores):
-                # Return points with non-zero relevance scores
-                if score > 0.0:
-                    results.append((score, self.chunks[idx]))
-                    
-            # Sort descending by score
-            results.sort(key=lambda x: x[0], reverse=True)
-            
-            sparse_matches = []
-            for score, chunk in results[:top_n]:
-                matched_chunk = chunk.copy()
-                matched_chunk["bm25_score"] = float(score)
-                sparse_matches.append(matched_chunk)
-                
-            return sparse_matches
+            index_snapshot  = self.index
+            chunks_snapshot = self.chunks
+
+        if not index_snapshot or not chunks_snapshot:
+            logger.debug("BM25 index is empty. Returning 0 matching candidates.")
+            return []
+
+        tokenized_query = self._tokenize(query)
+        scores = index_snapshot.get_scores(tokenized_query)
+
+        results = []
+        for idx, score in enumerate(scores):
+            # Return points with non-zero relevance scores
+            if score > 0.0:
+                results.append((score, chunks_snapshot[idx]))
+
+        # Sort descending by score
+        results.sort(key=lambda x: x[0], reverse=True)
+
+        sparse_matches = []
+        for score, chunk in results[:top_n]:
+            matched_chunk = chunk.copy()
+            matched_chunk["bm25_score"] = float(score)
+            sparse_matches.append(matched_chunk)
+
+        return sparse_matches
 
 # Export default instanced service
 bm25_service = BM25Service()

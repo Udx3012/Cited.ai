@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
+import asyncio
 import time
 import json
 import logging
@@ -145,46 +146,63 @@ async def chat_completions(payload: ChatRequest):
                     latency_ms=total_latency
                 )
 
-        # --- Step 1: Dense Retrieval (Qdrant Cloud) ---
+        # --- Step 1: Parallel Embed + BM25 ---
+        # Run HF embedding and BM25 concurrently to eliminate sequential wait.
+        loop = asyncio.get_event_loop()
+
+        async def _embed_query():
+            return await hf_embedder.embed_documents([payload.query])
+
+        async def _bm25_query():
+            # BM25 is CPU-bound/in-memory — run in executor to not block the event loop
+            return await loop.run_in_executor(
+                None, bm25_service.retrieve_sparse, payload.query, 20
+            )
+
+        embed_task  = asyncio.ensure_future(_embed_query())
+        bm25_task   = asyncio.ensure_future(_bm25_query())
+
+        try:
+            query_vectors_list, sparse_results = await asyncio.gather(embed_task, bm25_task)
+        except Exception as e:
+            logger.error(f"Parallel embed/BM25 failed: {str(e)}")
+            query_vectors_list, sparse_results = [], []
+
+        # --- Step 2: Dense Retrieval (Qdrant Cloud) ---
         dense_results = []
-        if qdrant_service.client:
+        if qdrant_service.client and query_vectors_list:
             try:
-                # Vectorize search query (dimension: 1024)
-                query_vectors = await hf_embedder.embed_documents([payload.query])
-                if query_vectors:
-                    query_vector = query_vectors[0]
-                    search_results = qdrant_service.client.search(
+                query_vector = query_vectors_list[0]
+
+                # Qdrant .search() is synchronous — run in executor to avoid blocking the event loop
+                def _qdrant_search():
+                    return qdrant_service.client.search(
                         collection_name=qdrant_service.collection_name,
                         query_vector=query_vector,
-                        limit=20,  # Fetch top 20 for fusion
+                        limit=20,
                         with_payload=True
                     )
-                    
-                    for point in search_results:
-                        payload_data = point.payload or {}
-                        dense_results.append({
-                            "id": point.id,
-                            "page_number": payload_data.get("page_number", 1),
-                            "chunk_index": payload_data.get("chunk_index", 0),
-                            "text": payload_data.get("text", ""),
-                            "vector_score": float(point.score),
-                            "bm25_score": 0.0,
-                            "metadata": {
-                                "document_name": payload_data.get("document_name", "unknown"),
-                                "page": payload_data.get("page_number", 1),
-                                "heading": payload_data.get("heading", "Introduction"),
-                                "is_ocr": payload_data.get("is_ocr", False)
-                            }
-                        })
+
+                search_results = await loop.run_in_executor(None, _qdrant_search)
+
+                for point in search_results:
+                    payload_data = point.payload or {}
+                    dense_results.append({
+                        "id": point.id,
+                        "page_number": payload_data.get("page_number", 1),
+                        "chunk_index": payload_data.get("chunk_index", 0),
+                        "text": payload_data.get("text", ""),
+                        "vector_score": float(point.score),
+                        "bm25_score": 0.0,
+                        "metadata": {
+                            "document_name": payload_data.get("document_name", "unknown"),
+                            "page": payload_data.get("page_number", 1),
+                            "heading": payload_data.get("heading", "Introduction"),
+                            "is_ocr": payload_data.get("is_ocr", False)
+                        }
+                    })
             except Exception as e:
                 logger.error(f"Dense vector search failed: {str(e)}")
-
-        # --- Step 2: Sparse Retrieval (BM25) ---
-        sparse_results = []
-        try:
-            sparse_results = bm25_service.retrieve_sparse(payload.query, top_n=20)
-        except Exception as e:
-            logger.error(f"Sparse lexical search failed: {str(e)}")
 
         # --- Step 3: Reciprocal Rank Fusion (RRF) ---
         fused_chunks = ReciprocalRankFusion.fuse_results(
@@ -206,15 +224,20 @@ async def chat_completions(payload: ChatRequest):
         context_chunks = reranked_chunks[:5]
 
         # 2. AI Guardrail: Confidence-based response filtering
-        # If no chunks match, or if the maximum vector similarity among retrieved candidates is < 0.65
         insufficient_context = False
         if not is_general_chat(payload.query):
             if not context_chunks:
                 insufficient_context = True
             else:
                 max_vector_score = max(c.get("vector_score", 0.0) for c in context_chunks)
-                max_bm25_score = max(c.get("bm25_score", 0.0) for c in context_chunks)
-                if max_vector_score < 0.65 and max_bm25_score == 0.0:
+                max_bm25_score   = max(c.get("bm25_score", 0.0) for c in context_chunks)
+                max_rerank_score = max(c.get("rerank_score", 0.0) for c in context_chunks)
+                has_signal = (
+                    max_vector_score >= 0.40
+                    or max_bm25_score > 0.0
+                    or max_rerank_score > 0.0
+                )
+                if not has_signal:
                     insufficient_context = True
 
         if insufficient_context:
