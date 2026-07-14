@@ -113,13 +113,13 @@ export default function ChatSandbox() {
     if (typeof window === "undefined") {
       return { 
         backendUrl: process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000/api/v1", 
-        apiKey: "ca_live_dev_test_key",
+        apiKey: "my_super_secret_cited_ai_key_2026",
         modelType: "high",
         temperature: 0.0
       };
     }
     const url = localStorage.getItem("cited_backend_url") || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000/api/v1";
-    const key = localStorage.getItem("cited_api_key") || "ca_live_dev_test_key";
+    const key = localStorage.getItem("cited_api_key") || "my_super_secret_cited_ai_key_2026";
     const model = localStorage.getItem("cited_model_type") || "high";
     const temp = parseFloat(localStorage.getItem("cited_temperature") || "0.0");
     return { backendUrl: url, apiKey: key, modelType: model, temperature: temp };

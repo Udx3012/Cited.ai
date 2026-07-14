@@ -18,13 +18,13 @@ export default function WorkspaceSettings() {
   const [chunkOverlap, setChunkOverlap] = useState(50);
   const [temperature, setTemperature] = useState(0.0);
   const [backendUrl, setBackendUrl] = useState(process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000/api/v1");
-  const [apiKey, setApiKey] = useState("ca_live_dev_test_key");
+  const [apiKey, setApiKey] = useState("my_super_secret_cited_ai_key_2026");
 
   // Load values on mount
   useEffect(() => {
     if (typeof window !== "undefined") {
       setBackendUrl(localStorage.getItem("cited_backend_url") || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000/api/v1");
-      setApiKey(localStorage.getItem("cited_api_key") || "ca_live_dev_test_key");
+      setApiKey(localStorage.getItem("cited_api_key") || "my_super_secret_cited_ai_key_2026");
       setModelType(localStorage.getItem("cited_model_type") || "high");
       setDenseWeight(parseFloat(localStorage.getItem("cited_dense_weight") || "0.7"));
       setSparseWeight(parseFloat(localStorage.getItem("cited_sparse_weight") || "0.3"));
