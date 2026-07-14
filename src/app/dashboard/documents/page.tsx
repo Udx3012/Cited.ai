@@ -450,7 +450,7 @@ export default function DocumentsLibrary() {
                 <RefreshCw className="w-4 h-4 text-[#45A29E] animate-spin" />
                 <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Ingestion Queue</h3>
               </div>
-              <span className="text-[10px] text-zinc-400 font-mono font-bold bg-zinc-900 px-2 py-0.5 rounded border border-white/[0.04]">
+              <span className="text-xs text-zinc-400 font-mono font-bold bg-zinc-900 px-2 py-0.5 rounded border border-white/[0.04]">
                 {uploadQueue.filter(i => i.status === "uploading").length} active
               </span>
             </div>
@@ -478,7 +478,7 @@ export default function DocumentsLibrary() {
                         <span className="text-xs font-semibold text-zinc-200 block truncate max-w-[180px]" title={item.name}>
                           {item.name}
                         </span>
-                        <span className="text-[9px] text-zinc-400 font-mono">{item.size}</span>
+                        <span className="text-xs text-zinc-400 font-mono">{item.size}</span>
                       </div>
                     </div>
 
@@ -497,7 +497,7 @@ export default function DocumentsLibrary() {
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button 
                           onClick={() => handleRetryUpload(item.id, item.name, item.size)}
-                          className="px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-800 border border-white/[0.06] text-[9px] font-bold text-zinc-300 transition-colors"
+                          className="px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-800 border border-white/[0.06] text-xs font-bold text-zinc-300 transition-colors"
                         >
                           Retry
                         </button>
@@ -511,7 +511,7 @@ export default function DocumentsLibrary() {
                     )}
 
                     {item.status === "uploading" && (
-                      <span className="text-[9px] font-mono font-bold text-[#45A29E] bg-[#45A29E]/5 px-2 py-0.5 rounded border border-[#45A29E]/10 shrink-0">
+                      <span className="text-xs font-mono font-bold text-[#45A29E] bg-[#45A29E]/5 px-2 py-0.5 rounded border border-[#45A29E]/10 shrink-0">
                         {item.progress}%
                       </span>
                     )}
@@ -520,7 +520,7 @@ export default function DocumentsLibrary() {
                   {/* Queue progress details */}
                   <div className="space-y-1">
                     {item.status === "error" ? (
-                      <div className="flex items-center gap-1 text-[10px] text-red-400 font-medium">
+                      <div className="flex items-center gap-1 text-xs text-red-400 font-medium">
                         <AlertCircle className="w-3.5 h-3.5" />
                         <span>{item.errorMsg}</span>
                       </div>
@@ -534,7 +534,7 @@ export default function DocumentsLibrary() {
                             style={{ width: `${item.progress}%` }} 
                           />
                         </div>
-                        <span className="text-[9px] text-zinc-400 font-medium block text-left">
+                        <span className="text-xs text-zinc-400 font-medium block text-left">
                           {item.status === "success" ? "Ready" : "Indexing document vectors..."}
                         </span>
                       </>
@@ -606,7 +606,7 @@ export default function DocumentsLibrary() {
               <button
                 key={status}
                 onClick={() => setFilterStatus(status as any)}
-                className={`px-3 py-1.5 rounded-full text-[10px] font-semibold uppercase tracking-wider transition-all border ${
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider transition-all border ${
                   filterStatus === status 
                     ? "bg-[#45A29E]/10 border-[#45A29E]/20 text-[#45A29E]" 
                     : "bg-zinc-900 border-white/[0.04] text-zinc-400 hover:text-zinc-300"
@@ -684,23 +684,23 @@ export default function DocumentsLibrary() {
                         <h4 className="text-xs font-semibold text-zinc-200 truncate group-hover:text-white transition-colors" title={doc.name}>
                           {doc.name}
                         </h4>
-                        <span className="text-[10px] text-zinc-400 font-mono">{doc.size}</span>
+                        <span className="text-xs text-zinc-400 font-mono">{doc.size}</span>
                       </div>
                     </div>
 
                     {/* Status Pill */}
                     {doc.status === "Processing" ? (
-                      <span className="text-[9px] font-mono font-bold text-amber-400 bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10 flex items-center gap-1">
+                      <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10 flex items-center gap-1">
                         <RefreshCw className="w-2.5 h-2.5 animate-spin" />
                         Indexing
                       </span>
                     ) : doc.status === "Failed" ? (
-                      <span className="text-[9px] font-mono font-bold text-red-400 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10 flex items-center gap-0.5">
+                      <span className="text-xs font-mono font-bold text-red-400 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10 flex items-center gap-0.5">
                         <AlertTriangle className="w-2.5 h-2.5" />
                         Failed
                       </span>
                     ) : (
-                      <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10 flex items-center gap-0.5">
+                      <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10 flex items-center gap-0.5">
                         <CheckCircle2 className="w-2.5 h-2.5" />
                         Ready
                       </span>
@@ -714,7 +714,7 @@ export default function DocumentsLibrary() {
                         <div className="w-full h-1 bg-zinc-950 rounded-full overflow-hidden">
                           <div className="h-full bg-[#45A29E]" style={{ width: `${doc.progress ?? 40}%` }} />
                         </div>
-                        <div className="flex justify-between text-[9px] text-zinc-400 font-mono">
+                        <div className="flex justify-between text-xs text-zinc-400 font-mono">
                           <span>Ingesting chunks...</span>
                           <span>{doc.progress ?? 40}%</span>
                         </div>
@@ -729,7 +729,7 @@ export default function DocumentsLibrary() {
 
                   {/* Footer options */}
                   <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/[0.02]">
-                    <span className="text-[9px] text-zinc-400 font-normal">{doc.date}</span>
+                    <span className="text-xs text-zinc-400 font-normal">{doc.date}</span>
                     
                     <div className="flex items-center gap-2">
                       <button 
@@ -766,7 +766,7 @@ export default function DocumentsLibrary() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs text-zinc-400">
                   <thead>
-                    <tr className="text-[10px] text-zinc-550 font-bold uppercase tracking-wider border-b border-white/[0.02] pb-2">
+                    <tr className="text-xs text-zinc-400 font-bold uppercase tracking-wider border-b border-white/[0.02] pb-2">
                       <th className="pb-3 font-semibold">Document Name</th>
                       <th className="pb-3 font-semibold">Size</th>
                       <th className="pb-3 font-semibold">Pages</th>
@@ -787,17 +787,17 @@ export default function DocumentsLibrary() {
                         <td className="py-3 font-mono text-zinc-350">{doc.pages} p.</td>
                         <td className="py-3">
                           {doc.status === "Processing" ? (
-                            <span className="text-[9px] font-mono font-bold text-amber-400 bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10 flex items-center gap-1">
+                            <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10 flex items-center gap-1">
                               <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
                               Indexing ({doc.progress}%)
                             </span>
                           ) : doc.status === "Failed" ? (
-                            <span className="text-[9px] font-mono font-bold text-red-400 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10 flex items-center gap-1">
+                            <span className="text-xs font-mono font-bold text-red-400 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10 flex items-center gap-1">
                               <AlertTriangle className="w-3.5 h-3.5" />
                               Failed
                             </span>
                           ) : (
-                            <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10 flex items-center gap-1">
+                            <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10 flex items-center gap-1">
                               <CheckCircle2 className="w-3.5 h-3.5" />
                               Ready
                             </span>

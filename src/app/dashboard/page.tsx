@@ -32,7 +32,7 @@ export default function DashboardOverview() {
       {/* Page Header */}
       <div>
         <h1 className="text-2xl font-serif text-white tracking-tight">Overview</h1>
-        <p className="text-zinc-400 text-xs font-normal mt-1">
+        <p className="text-zinc-400 text-sm font-normal mt-1">
           Monitor your document-grounded RAG pipeline ingestion and search performance.
         </p>
       </div>
@@ -51,7 +51,7 @@ export default function DashboardOverview() {
               
               <div>
                 <div className="flex items-center justify-between mb-4">
-                  <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">{kpi.title}</span>
+                  <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider block">{kpi.title}</span>
                   <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-white/[0.04] flex items-center justify-center">
                     <Icon className="w-4 h-4 text-[#45A29E]" />
                   </div>
@@ -61,8 +61,8 @@ export default function DashboardOverview() {
               </div>
 
               <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/[0.02]">
-                <span className="text-[10px] text-zinc-400 font-medium">{kpi.subtitle}</span>
-                <span className={`text-[10px] font-mono font-bold flex items-center gap-0.5 ${
+                <span className="text-xs text-zinc-400 font-medium">{kpi.subtitle}</span>
+                <span className={`text-xs font-mono font-bold flex items-center gap-0.5 ${
                   kpi.trendType === "up" 
                     ? kpi.title.includes("Latency") ? "text-green-400" : "text-green-400" 
                     : "text-zinc-400"
@@ -84,14 +84,14 @@ export default function DashboardOverview() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-sm font-semibold text-white">System Performance</h3>
-              <span className="text-[10px] text-zinc-400 font-normal mt-0.5 block">Faithfulness and response latency over the last 24 hours</span>
+              <span className="text-xs text-zinc-400 font-normal mt-1 block">Faithfulness and response latency over the last 24 hours</span>
             </div>
             
             {/* Chart toggle controls */}
             <div className="flex gap-1.5 bg-zinc-950 p-1 rounded-lg border border-white/[0.03]">
               <button 
                 onClick={() => setMetricTab("latency")}
-                className={`text-[10px] font-semibold px-2.5 py-1 rounded-md transition-all ${
+                className={`text-xs font-semibold px-2.5 py-1 rounded-md transition-all ${
                   metricTab === "latency" ? "bg-zinc-905 text-white border border-white/[0.03]" : "text-zinc-400 hover:text-zinc-300"
                 }`}
               >
@@ -99,7 +99,7 @@ export default function DashboardOverview() {
               </button>
               <button 
                 onClick={() => setMetricTab("faithfulness")}
-                className={`text-[10px] font-semibold px-2.5 py-1 rounded-md transition-all ${
+                className={`text-xs font-semibold px-2.5 py-1 rounded-md transition-all ${
                   metricTab === "faithfulness" ? "bg-zinc-905 text-white border border-white/[0.03]" : "text-zinc-400 hover:text-zinc-300"
                 }`}
               >
@@ -181,7 +181,7 @@ export default function DashboardOverview() {
             </svg>
 
             {/* Y axis legend */}
-            <div className="absolute left-2 top-2 text-[9px] font-mono text-zinc-400 flex flex-col justify-between h-48 pointer-events-none">
+            <div className="absolute left-2 top-2 text-xs font-mono text-zinc-400 flex flex-col justify-between h-48 pointer-events-none">
               <span>{metricTab === "latency" ? "1200ms" : "100%"}</span>
               <span>{metricTab === "latency" ? "800ms" : "95%"}</span>
               <span>{metricTab === "latency" ? "400ms" : "90%"}</span>
@@ -190,7 +190,7 @@ export default function DashboardOverview() {
           </div>
           
           {/* X axis legend */}
-          <div className="flex justify-between px-8 text-[9px] font-mono text-zinc-400 border-t border-white/[0.02] pt-3 mt-3">
+          <div className="flex justify-between px-8 text-xs font-mono text-zinc-400 border-t border-white/[0.02] pt-3 mt-3">
             <span>24h ago</span>
             <span>18h ago</span>
             <span>12h ago</span>
@@ -203,7 +203,7 @@ export default function DashboardOverview() {
         <div className="glass-card rounded-2xl p-5 flex flex-col justify-between">
           <div>
             <h3 className="text-sm font-semibold text-white mb-1">RAG Pipeline Status</h3>
-            <span className="text-[10px] text-zinc-400 font-normal block mb-4">Integrations health metrics</span>
+            <span className="text-xs text-zinc-400 font-normal block mb-4">Integrations health metrics</span>
             
             <div className="space-y-4">
               {[
@@ -220,11 +220,11 @@ export default function DashboardOverview() {
                       </div>
                       <div>
                         <span className="text-xs font-semibold text-zinc-200 block">{node.name}</span>
-                        <span className="text-[10px] text-zinc-400 block font-normal">{node.desc}</span>
+                        <span className="text-xs text-zinc-400 block font-normal">{node.desc}</span>
                       </div>
                     </div>
                     
-                    <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">
+                    <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">
                       {node.status}
                     </span>
                   </div>
@@ -233,7 +233,7 @@ export default function DashboardOverview() {
             </div>
           </div>
 
-          <div className="mt-6 pt-4 border-t border-white/[0.02] flex items-center justify-between text-zinc-400 text-[10px] font-mono">
+          <div className="mt-6 pt-4 border-t border-white/[0.02] flex items-center justify-between text-zinc-400 text-xs font-mono">
             <span>Server version: v2.4</span>
             <span className="flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
@@ -250,13 +250,13 @@ export default function DashboardOverview() {
             <History className="w-4 h-4 text-[#45A29E]" />
             <h3 className="text-sm font-semibold text-white">Recent Query Logs</h3>
           </div>
-          <span className="text-[10px] text-zinc-400 font-mono">Real-time update</span>
+          <span className="text-xs text-zinc-400 font-mono">Real-time update</span>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs text-zinc-400 font-sans">
             <thead>
-              <tr className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider border-b border-white/[0.02] pb-2">
+              <tr className="text-xs text-zinc-400 font-bold uppercase tracking-wider border-b border-white/[0.02] pb-2">
                 <th className="pb-3 font-semibold">User Question</th>
                 <th className="pb-3 font-semibold">Faithfulness</th>
                 <th className="pb-3 font-semibold text-right">Latency</th>
@@ -269,7 +269,7 @@ export default function DashboardOverview() {
                 <tr key={idx} className="hover:bg-zinc-900/10 transition-colors">
                   <td className="py-3 font-medium text-zinc-200 truncate max-w-sm">{item.q}</td>
                   <td className="py-3">
-                    <span className="font-bold text-green-400 bg-green-500/5 px-2 py-0.5 rounded border border-green-500/10 text-[10px] font-mono">
+                    <span className="font-bold text-green-400 bg-green-500/5 px-2 py-0.5 rounded border border-green-500/10 text-xs font-mono">
                       {item.score}
                     </span>
                   </td>

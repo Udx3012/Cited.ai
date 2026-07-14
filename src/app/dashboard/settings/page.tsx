@@ -79,7 +79,7 @@ export default function WorkspaceSettings() {
             <div className="space-y-2">
               <label className="text-xs font-medium text-zinc-300 flex items-center justify-between">
                 <span>RAG Service Key</span>
-                <span className="text-[10px] text-zinc-400 font-mono">Used for backend endpoint X-API-Key auth</span>
+                <span className="text-xs text-zinc-400 font-mono">Used for backend endpoint X-API-Key auth</span>
               </label>
               <div className="flex items-center gap-3 relative">
                 <input 
@@ -140,7 +140,7 @@ export default function WorkspaceSettings() {
                 }}
                 className="w-full h-1.5 bg-zinc-950 rounded-lg appearance-none cursor-pointer accent-[#45A29E]"
               />
-              <span className="text-[10px] text-zinc-400 font-normal block leading-relaxed">
+              <span className="text-xs text-zinc-400 font-normal block leading-relaxed">
                 Prioritizes conceptual/semantic matches over raw wording.
               </span>
             </div>
@@ -164,7 +164,7 @@ export default function WorkspaceSettings() {
                 }}
                 className="w-full h-1.5 bg-zinc-950 rounded-lg appearance-none cursor-pointer accent-[#45A29E]"
               />
-              <span className="text-[10px] text-zinc-400 font-normal block leading-relaxed">
+              <span className="text-xs text-zinc-400 font-normal block leading-relaxed">
                 Prioritizes exact keyword matches, code symbols, and numbers.
               </span>
             </div>
@@ -188,7 +188,7 @@ export default function WorkspaceSettings() {
                 onChange={(e) => setChunkSize(parseInt(e.target.value) || 0)}
                 className="bg-zinc-950 text-xs px-4 py-3 rounded-xl border border-white/[0.04] w-full text-zinc-200 focus:outline-none focus:border-[#45A29E]/30 font-semibold font-mono"
               />
-              <span className="text-[10px] text-zinc-400 font-normal block">
+              <span className="text-xs text-zinc-400 font-normal block">
                 Target length for dividing document paragraphs. Recommended: 500 characters.
               </span>
             </div>
@@ -202,7 +202,7 @@ export default function WorkspaceSettings() {
                 onChange={(e) => setChunkOverlap(parseInt(e.target.value) || 0)}
                 className="bg-zinc-950 text-xs px-4 py-3 rounded-xl border border-white/[0.04] w-full text-zinc-200 focus:outline-none focus:border-[#45A29E]/30 font-semibold font-mono"
               />
-              <span className="text-[10px] text-zinc-400 font-normal block">
+              <span className="text-xs text-zinc-400 font-normal block">
                 Preserves textual boundary context between adjacent chunks. Recommended: 10%.
               </span>
             </div>
@@ -246,7 +246,7 @@ export default function WorkspaceSettings() {
                 onChange={(e) => setTemperature(parseFloat(e.target.value))}
                 className="w-full h-1.5 bg-zinc-950 rounded-lg appearance-none cursor-pointer accent-[#45A29E]"
               />
-              <span className="text-[10px] text-zinc-400 font-normal block leading-relaxed">
+              <span className="text-xs text-zinc-400 font-normal block leading-relaxed">
                 Set to 0.0 for strict, hallucination-free factual citation summaries.
               </span>
             </div>

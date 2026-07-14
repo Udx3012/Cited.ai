@@ -140,14 +140,14 @@ export default function RAGTracer() {
       status: denseMatches.length > 0 ? "Completed" : "Pending",
       details: (
         <div className="space-y-2.5 text-left">
-          <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block font-mono">Qdrant Cosine Similarity Scores</span>
+          <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider block font-mono">Qdrant Cosine Similarity Scores</span>
           {denseMatches.length > 0 ? (
             <div className="space-y-1.5 font-mono text-xs">
               {denseMatches.slice(0, 5).map((d, i) => (
                 <div key={i} className="flex justify-between items-center p-2 rounded bg-zinc-950/80 border border-white/[0.02]">
                   <div className="truncate max-w-[240px]">
                     <span className="text-zinc-200 block truncate" title={d.document_name}>{d.document_name}</span>
-                    <span className="text-[9px] text-zinc-400">Page {d.page} (chunk {d.chunk_index})</span>
+                    <span className="text-xs text-zinc-400">Page {d.page} (chunk {d.chunk_index})</span>
                   </div>
                   <span className="text-[#45A29E] font-bold shrink-0">{d.vector_score.toFixed(4)}</span>
                 </div>
@@ -166,14 +166,14 @@ export default function RAGTracer() {
       status: sparseMatches.length > 0 ? "Completed" : "Pending",
       details: (
         <div className="space-y-2.5 text-left">
-          <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block font-mono">BM25 Okapi Weights</span>
+          <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider block font-mono">BM25 Okapi Weights</span>
           {sparseMatches.length > 0 ? (
             <div className="space-y-1.5 font-mono text-xs">
               {sparseMatches.slice(0, 5).map((d, i) => (
                 <div key={i} className="flex justify-between items-center p-2 rounded bg-zinc-950/80 border border-white/[0.02]">
                   <div className="truncate max-w-[240px]">
                     <span className="text-zinc-200 block truncate" title={d.document_name}>{d.document_name}</span>
-                    <span className="text-[9px] text-zinc-400">Page {d.page} (chunk {d.chunk_index})</span>
+                    <span className="text-xs text-zinc-400">Page {d.page} (chunk {d.chunk_index})</span>
                   </div>
                   <span className="text-[#45A29E] font-bold shrink-0">{d.bm25_score.toFixed(2)}</span>
                 </div>
@@ -192,7 +192,7 @@ export default function RAGTracer() {
       status: rrfMerge.length > 0 ? "Completed" : "Pending",
       details: (
         <div className="space-y-3 text-left">
-          <div className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider font-mono">Merged Candidates (Sorted by RRF Score)</div>
+          <div className="text-xs text-zinc-400 font-bold uppercase tracking-wider font-mono">Merged Candidates (Sorted by RRF Score)</div>
           {rrfMerge.length > 0 ? (
             <div className="space-y-1.5 font-mono text-xs">
               {rrfMerge.slice(0, 5).map((d, i) => (
@@ -201,7 +201,7 @@ export default function RAGTracer() {
                     <span className="truncate max-w-[220px]" title={d.document_name}>{d.document_name} (p.{d.page})</span>
                     <span className="text-[#45A29E]">Score: {d.rerank_score.toFixed(4)}</span>
                   </div>
-                  <div className="flex justify-between text-[9px] text-zinc-400">
+                  <div className="flex justify-between text-xs text-zinc-400">
                     <span>Dense Score: {d.vector_score.toFixed(3)}</span>
                     <span>BM25 Weight: {d.bm25_score.toFixed(1)}</span>
                   </div>
@@ -221,7 +221,7 @@ export default function RAGTracer() {
       status: rrfMerge.length > 0 ? "Completed" : "Pending",
       details: (
         <div className="space-y-2.5 text-left">
-          <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block font-mono">Cross-Encoder Re-scoring</span>
+          <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider block font-mono">Cross-Encoder Re-scoring</span>
           {rrfMerge.length > 0 ? (
             <div className="space-y-1.5 font-mono text-xs">
               {rrfMerge.slice(0, 5).map((d, i) => {
@@ -231,7 +231,7 @@ export default function RAGTracer() {
                   <div key={i} className="flex justify-between items-center p-2 rounded bg-zinc-950/80 border border-white/[0.02]">
                     <div>
                       <span className="text-zinc-200 block truncate max-w-[200px]" title={d.document_name}>{d.document_name} (p.{d.page})</span>
-                      <span className="text-[9px] text-zinc-400">RRF Order: #{i + 1} &rarr; Reranked: #{i + 1}</span>
+                      <span className="text-xs text-zinc-400">RRF Order: #{i + 1} &rarr; Reranked: #{i + 1}</span>
                     </div>
                     <span className="text-[#45A29E] font-bold">{simulatedRerank.toFixed(3)}</span>
                   </div>
@@ -274,7 +274,7 @@ export default function RAGTracer() {
       {/* Page Header */}
       <div>
         <h1 className="text-2xl font-serif text-white tracking-tight">AI Inspector</h1>
-        <p className="text-zinc-400 text-xs font-normal mt-1">
+        <p className="text-zinc-400 text-sm font-normal mt-1">
           Inspect search queries, trace dense/sparse overlaps, and inspect fusion scores.
         </p>
       </div>
@@ -286,7 +286,7 @@ export default function RAGTracer() {
             <Search className="w-4 h-4" />
           </div>
           <div className="flex-1">
-            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Query Tracer</span>
+            <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider block">Query Tracer</span>
             <input 
               type="text"
               value={queryInput}
@@ -306,7 +306,7 @@ export default function RAGTracer() {
           <button 
             type="submit" 
             disabled={isSearching || !queryInput.trim()}
-            className="flex items-center gap-1.5 bg-[#45A29E] disabled:bg-zinc-900 hover:bg-[#398a87] text-black disabled:text-zinc-400 px-4 py-2 rounded-full text-[11px] font-bold transition-all disabled:opacity-50 cursor-pointer"
+            className="flex items-center gap-1.5 bg-[#45A29E] disabled:bg-zinc-900 hover:bg-[#398a87] text-black disabled:text-zinc-400 px-4 py-2 rounded-full text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
           >
             {isSearching ? (
               <RefreshCw className="w-3 h-3 animate-spin" />
@@ -356,12 +356,12 @@ export default function RAGTracer() {
                   
                   <div>
                     <h4 className="text-xs font-semibold text-white leading-snug">{step.name}</h4>
-                    <span className="text-[10px] text-zinc-400 font-normal mt-0.5 block">{step.desc}</span>
+                    <span className="text-xs text-zinc-400 font-normal mt-0.5 block">{step.desc}</span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded border ${
+                  <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded border ${
                     step.status === "Completed" 
                       ? "text-emerald-400 bg-emerald-500/5 border-emerald-500/10" 
                       : "text-zinc-500 bg-zinc-900 border-white/[0.04]"
@@ -394,7 +394,7 @@ export default function RAGTracer() {
           <div className="space-y-4">
             {rawResults.slice(0, 3).map((chunk, idx) => (
               <div key={chunk.id} className="p-4 bg-zinc-950 rounded-xl border border-white/[0.03] text-left">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.02] pb-2 mb-2 font-mono text-[10px]">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.02] pb-2 mb-2 font-mono text-xs">
                   <span className="text-zinc-350 font-bold truncate max-w-sm">Source: {chunk.document_name}</span>
                   <div className="flex gap-2 text-zinc-400 shrink-0">
                     <span className="px-2 py-0.5 bg-[#45A29E]/5 border border-[#45A29E]/10 rounded text-[#45A29E]">

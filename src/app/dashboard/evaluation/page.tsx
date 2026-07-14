@@ -98,7 +98,7 @@ export default function RAGEvaluation() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-serif text-white tracking-tight">Evaluation Dashboard</h1>
-          <p className="text-zinc-400 text-xs font-normal mt-1">
+          <p className="text-zinc-400 text-sm font-normal mt-1">
             Analyze RAG pipeline synthesis correctness, citation overlaps, and hallucination rates.
           </p>
         </div>
@@ -137,10 +137,10 @@ export default function RAGEvaluation() {
           <div key={idx} className="glass-card p-5 rounded-2xl relative overflow-hidden flex flex-col justify-between h-32">
             <div className="absolute top-0 right-0 w-16 h-16 bg-[#45A29E]/[0.005] rounded-bl-full pointer-events-none" />
             <div>
-              <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block mb-2">{item.title}</span>
+              <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider block mb-2">{item.title}</span>
               <h3 className={`text-2xl font-semibold tracking-tight ${item.color}`}>{item.value}</h3>
             </div>
-            <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/[0.02] text-[9px] font-mono">
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/[0.02] text-xs font-mono">
               <span className="text-zinc-400">Test size: 50 cases</span>
               <span className={`font-bold ${
                 item.status === "Attention" ? "text-amber-400" : "text-zinc-400"
@@ -160,7 +160,7 @@ export default function RAGEvaluation() {
               <BarChart2 className="w-4 h-4 text-[#45A29E]" />
               <h3 className="text-sm font-semibold text-white">Score Distribution</h3>
             </div>
-            <span className="text-[10px] text-zinc-400 font-normal mt-0.5 block">Faithfulness spread across 50 simulated tests</span>
+            <span className="text-xs text-zinc-400 font-normal mt-1 block">Faithfulness spread across 50 simulated tests</span>
           </div>
 
           <div className="h-48 flex items-end justify-between gap-6 px-4">
@@ -172,14 +172,14 @@ export default function RAGEvaluation() {
               { label: "< 0.70", idx: 4 }
             ].map((bar) => (
               <div key={bar.idx} className="flex-1 flex flex-col items-center gap-3 h-full justify-end">
-                <span className="text-[9px] font-mono text-zinc-400">{runCount[bar.idx]} runs</span>
+                <span className="text-xs font-mono text-zinc-400">{runCount[bar.idx]} runs</span>
                 <div className="w-full relative rounded-t-lg bg-zinc-950 border border-white/[0.04] overflow-hidden flex items-end" style={{ height: "70%" }}>
                   <div 
                     className="w-full bg-gradient-to-t from-[#45A29E]/30 to-[#45A29E] rounded-t-md transition-all duration-500 shadow-[0_0_15px_rgba(69,162,158,0.15)]"
                     style={{ height: barHeights[bar.idx] }}
                   />
                 </div>
-                <span className="text-[10px] font-semibold text-zinc-400 font-mono">{bar.label}</span>
+                <span className="text-xs font-semibold text-zinc-400 font-mono">{bar.label}</span>
               </div>
             ))}
           </div>
@@ -189,7 +189,7 @@ export default function RAGEvaluation() {
         <div className="glass-card rounded-2xl p-5 flex flex-col justify-between">
           <div>
             <h3 className="text-sm font-semibold text-white mb-1">Golden Dataset</h3>
-            <span className="text-[10px] text-zinc-400 font-normal block mb-4">Ground-truth validation configurations</span>
+            <span className="text-xs text-zinc-400 font-normal block mb-4">Ground-truth validation configurations</span>
 
             <div className="space-y-3 font-mono text-xs">
               <div className="flex justify-between border-b border-white/[0.02] pb-2">
@@ -213,7 +213,7 @@ export default function RAGEvaluation() {
 
           <div className="p-3 bg-zinc-950 border border-white/[0.03] rounded-xl flex items-start gap-2.5 mt-6 text-left">
             <Sparkles className="w-4 h-4 text-[#45A29E] shrink-0 mt-0.5" />
-            <p className="text-[10px] text-zinc-400 leading-relaxed font-normal">
+            <p className="text-xs text-zinc-400 leading-relaxed font-normal">
               We recommend using strict validation on release branches to block index pollution from hall-prone responses.
             </p>
           </div>
@@ -227,7 +227,7 @@ export default function RAGEvaluation() {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs text-zinc-400 font-normal">
             <thead>
-              <tr className="text-[9px] text-zinc-550 font-bold uppercase tracking-wider border-b border-white/[0.02]">
+              <tr className="text-xs text-zinc-400 font-bold uppercase tracking-wider border-b border-white/[0.02]">
                 <th className="pb-3 font-semibold">Target Query</th>
                 <th className="pb-3 font-semibold">Matched Source</th>
                 <th className="pb-3 font-semibold">Precision</th>
@@ -247,7 +247,7 @@ export default function RAGEvaluation() {
                   <td className="py-3 font-mono text-zinc-350">{row.p}</td>
                   <td className="py-3 font-mono text-zinc-350">{row.r}</td>
                   <td className="py-3 text-right">
-                    <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">
+                    <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">
                       {row.status}
                     </span>
                   </td>
@@ -265,7 +265,7 @@ export default function RAGEvaluation() {
             <AlertTriangle className="w-4 h-4 text-amber-400" />
             <h3 className="text-sm font-semibold text-white">Discrepancy Report (Failed Runs)</h3>
           </div>
-          <span className="text-[10px] text-zinc-400 font-mono">2 failures to trace</span>
+          <span className="text-xs text-zinc-400 font-mono">2 failures to trace</span>
         </div>
 
         <div className="space-y-4">
@@ -273,7 +273,7 @@ export default function RAGEvaluation() {
             <div key={idx} className="p-4 bg-zinc-950 rounded-xl border border-white/[0.03] space-y-3 text-left">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.02] pb-2">
                 <span className="text-xs font-semibold text-zinc-200 truncate max-w-md">Query: &ldquo;{f.q}&rdquo;</span>
-                <div className="flex gap-2 text-[10px] font-mono shrink-0">
+                <div className="flex gap-2 text-xs font-mono shrink-0">
                   <span className="px-2 py-0.5 bg-red-500/5 border border-red-500/10 text-red-400 rounded">
                     Score: {f.faithfulness}
                   </span>
