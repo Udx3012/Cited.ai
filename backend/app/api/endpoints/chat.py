@@ -277,7 +277,7 @@ async def chat_completions(payload: ChatRequest):
         if len(fused_chunks) > 3:
             try:
                 reranked_chunks = await asyncio.wait_for(
-                    hf_reranker.rerank_chunks(payload.query, fused_chunks),
+                    hf_reranker.rerank_chunks(retrieval_query, fused_chunks),
                     timeout=8.0
                 )
             except asyncio.TimeoutError:
