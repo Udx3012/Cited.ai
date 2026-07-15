@@ -60,7 +60,6 @@ class GroqService:
                 f"[Index: {idx + 1}]\n"
                 f"Source Document: {chunk['document_name']}\n"
                 f"Page: {chunk['page']}\n"
-                f"Chunk Index: {chunk['chunk_index']}\n"
                 f"Content: {chunk['text']}\n"
                 "-----------------------------------\n\n"
             )

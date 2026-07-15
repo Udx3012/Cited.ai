@@ -74,14 +74,14 @@ async def query_hybrid_retrieval(payload: RetrievalRequest):
         if qdrant_service.client and any(val != 0.0 for val in query_vector):
             try:
                 # Search Qdrant cosine index using the query_vector we already generated
-                search_results = qdrant_service.client.search(
+                search_response = qdrant_service.client.query_points(
                     collection_name=qdrant_service.collection_name,
-                    query_vector=query_vector,
+                    query=query_vector,
                     limit=payload.top_k,
                     with_payload=True
                 )
                 
-                for point in search_results:
+                for point in search_response.points:
                     payload_data = point.payload or {}
                     dense_results.append({
                         "id": point.id,

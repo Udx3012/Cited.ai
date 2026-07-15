@@ -235,17 +235,17 @@ async def chat_completions(payload: ChatRequest):
         if qdrant_service.client and any(val != 0.0 for val in query_vector):
             try:
                 # Qdrant search using the pre-computed query_vector
-                search_results = await loop.run_in_executor(
+                search_response = await loop.run_in_executor(
                     None,
-                    lambda: qdrant_service.client.search(
+                    lambda: qdrant_service.client.query_points(
                         collection_name=qdrant_service.collection_name,
-                        query_vector=query_vector,
+                        query=query_vector,
                         limit=20,
                         with_payload=True
                     )
                 )
 
-                for point in search_results:
+                for point in search_response.points:
                     payload_data = point.payload or {}
                     dense_results.append({
                         "id": point.id,
@@ -303,6 +303,9 @@ async def chat_completions(payload: ChatRequest):
                 f"Retrieval scores: vector={max_vector_score:.4f}, "
                 f"bm25={max_bm25_score:.2f}, rerank={max_rerank_score:.4f}."
             )
+            # Refuse query if both semantic (dense) similarity and keyword (sparse) overlap are too low
+            if max_vector_score < 0.65 and max_bm25_score < 1.0:
+                insufficient_context = True
 
         if insufficient_context:
             logger.info("Guardrail Check: Retrieval confidence below threshold. Refusing query.")
