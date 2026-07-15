@@ -194,13 +194,14 @@ async def chat_completions(payload: ChatRequest):
                 # convert cached answer into a single SSE stream chunk response for seamless UX
                 async def sse_cached_generator():
                     yield f"data: {json.dumps({'type': 'content', 'delta': cache_match.answer or ''})}\n\n"
-                    yield f"data: {json.dumps({
+                    meta_payload = {
                         'type': 'metadata',
                         'citations': [c.model_dump() for c in cached_citations],
                         'confidence_score': cache_match.confidence_score,
                         'sufficient_context': cache_match.sufficient_context,
                         'cache_hit': True,
-                    })}\n\n"
+                    }
+                    yield f"data: {json.dumps(meta_payload)}\n\n"
                 return StreamingResponse(sse_cached_generator(), media_type="text/event-stream")
             else:
                 return ChatResponse(
