@@ -474,18 +474,21 @@ export default function ChatSandbox() {
                           const match = chunk.match(/\[(\d+)\]/);
                           if (match) {
                             const citId = parseInt(match[1]);
-                            const isHighlighted = selectedCitationId === citId;
-                            return (
-                              <button
-                                key={i}
-                                onClick={() => setSelectedCitationId(selectedCitationId === citId ? null : citId)}
-                                className={`inline-flex items-center justify-center w-5 h-5 mx-0.5 text-[9px] font-bold rounded ${
-                                  isHighlighted ? "bg-[#45A29E] text-black font-extrabold" : "bg-zinc-800 text-[#45A29E] hover:bg-zinc-700"
-                                } transition-all duration-200 cursor-pointer`}
-                              >
-                                {citId}
-                              </button>
-                            );
+                            const isValid = !m.citations || m.citations.includes(citId);
+                            if (isValid) {
+                              const isHighlighted = selectedCitationId === citId;
+                              return (
+                                <button
+                                  key={i}
+                                  onClick={() => setSelectedCitationId(selectedCitationId === citId ? null : citId)}
+                                  className={`inline-flex items-center justify-center w-5 h-5 mx-0.5 text-[9px] font-bold rounded ${
+                                    isHighlighted ? "bg-[#45A29E] text-black font-extrabold" : "bg-zinc-800 text-[#45A29E] hover:bg-zinc-700"
+                                  } transition-all duration-200 cursor-pointer`}
+                                >
+                                  {citId}
+                                </button>
+                              );
+                            }
                           }
                           return chunk;
                         })
