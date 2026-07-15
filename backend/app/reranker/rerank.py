@@ -22,6 +22,7 @@ class HuggingFaceReranker(BaseReranker):
         self.model_name = model_name
         self.api_url = f"https://router.huggingface.co/hf-inference/models/{self.model_name}"
         self.headers = {"Authorization": f"Bearer {settings.HF_API_KEY}"} if settings.HF_API_KEY else {}
+        self.client = httpx.Client()
 
     async def rerank_chunks(self, query: str, chunks: List[Dict[str, Any]], max_retries: int = 5) -> List[Dict[str, Any]]:
         """
@@ -53,13 +54,12 @@ class HuggingFaceReranker(BaseReranker):
         loop = asyncio.get_event_loop()
 
         def _sync_rerank() -> Any:
-            with httpx.Client() as client:
-                return client.post(
-                    self.api_url,
-                    json=payload,
-                    headers=self.headers,
-                    timeout=8.0  # Matches the asyncio.wait_for(timeout=8) in chat.py
-                )
+            return self.client.post(
+                self.api_url,
+                json=payload,
+                headers=self.headers,
+                timeout=8.0  # Matches the asyncio.wait_for(timeout=8) in chat.py
+            )
 
         for attempt in range(max_retries):
             try:

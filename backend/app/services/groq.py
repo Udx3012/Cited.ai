@@ -16,6 +16,7 @@ class GroqService:
             "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
             "Content-Type": "application/json"
         }
+        self.client = httpx.AsyncClient()
 
     def _build_prompts(self, query: str, context_chunks: List[Dict[str, Any]]) -> tuple:
         """
@@ -95,20 +96,19 @@ class GroqService:
         }
 
         logger.info(f"Submitting grounded generation request to Groq ({self.model_name})...")
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(self.api_url, json=payload, headers=self.headers, timeout=30.0)
-                if response.status_code != 200:
-                    logger.error(f"Groq completions failed: {response.status_code} - {response.text}")
-                    raise Exception(f"Groq API error: {response.text}")
-                
-                result = response.json()
-                raw_text = result["choices"][0]["message"]["content"] or ""
-                
-                return self._parse_raw_llm_response(raw_text)
-            except Exception as e:
-                logger.error(f"Failed to query Groq LLM: {str(e)}")
-                raise Exception(f"Failed to query grounded generator: {str(e)}")
+        try:
+            response = await self.client.post(self.api_url, json=payload, headers=self.headers, timeout=30.0)
+            if response.status_code != 200:
+                logger.error(f"Groq completions failed: {response.status_code} - {response.text}")
+                raise Exception(f"Groq API error: {response.text}")
+            
+            result = response.json()
+            raw_text = result["choices"][0]["message"]["content"] or ""
+            
+            return self._parse_raw_llm_response(raw_text)
+        except Exception as e:
+            logger.error(f"Failed to query Groq LLM: {str(e)}")
+            raise Exception(f"Failed to query grounded generator: {str(e)}")
 
     async def generate_grounded_answer_stream(
         self, 
@@ -143,69 +143,68 @@ class GroqService:
         metadata_str = ""
 
         logger.info(f"Submitting streaming completions request to Groq...")
-        async with httpx.AsyncClient() as client:
-            try:
-                async with client.stream("POST", self.api_url, json=payload, headers=self.headers, timeout=30.0) as response:
-                    if response.status_code != 200:
-                        error_body = await response.aread()
-                        logger.error(f"Groq stream request failed: {response.status_code} - {error_body.decode()}")
-                        yield {"type": "content", "delta": "Failed to stream answer from generator."}
-                        return
-                    
-                    async for line in response.aiter_lines():
-                        if not line.strip():
-                            continue
-                        if line.startswith("data: "):
-                            data_str = line[6:]
-                            if data_str.strip() == "[DONE]":
-                                break
-                            
-                            try:
-                                chunk_data = json.loads(data_str)
-                                delta = chunk_data["choices"][0]["delta"].get("content", "")
-                            except Exception:
-                                continue
-
-                            if not in_metadata:
-                                accum += delta
-                                if delimiter in accum:
-                                    parts = accum.split(delimiter)
-                                    # Yield preceding text
-                                    if parts[0]:
-                                        yield {"type": "content", "delta": parts[0]}
-                                    metadata_str = parts[1]
-                                    in_metadata = True
-                                else:
-                                    # Keep look-ahead window, yield the rest
-                                    if len(accum) > del_len:
-                                        yield {"type": "content", "delta": accum[:-del_len]}
-                                        accum = accum[-del_len:]
-                            else:
-                                metadata_str += delta
-
-                # Process final metadata payload
-                if in_metadata:
-                    try:
-                        start_idx = metadata_str.find("{")
-                        end_idx = metadata_str.rfind("}")
-                        if start_idx != -1 and end_idx != -1:
-                            meta_json = json.loads(metadata_str[start_idx:end_idx+1])
-                            yield {
-                                "type": "metadata",
-                                "citations": meta_json.get("citations", []),
-                                "confidence_score": meta_json.get("confidence_score", 0.0),
-                                "sufficient_context": meta_json.get("sufficient_context", True)
-                            }
-                            return
-                    except Exception as parse_ex:
-                        logger.error(f"Error parsing metadata JSON from stream: {str(parse_ex)}")
+        try:
+            async with self.client.stream("POST", self.api_url, json=payload, headers=self.headers, timeout=30.0) as response:
+                if response.status_code != 200:
+                    error_body = await response.aread()
+                    logger.error(f"Groq stream request failed: {response.status_code} - {error_body.decode()}")
+                    yield {"type": "content", "delta": "Failed to stream answer from generator."}
+                    return
                 
-                # Fallback empty metadata if not parsed
-                yield {"type": "metadata", "citations": [], "confidence_score": 0.0, "sufficient_context": False}
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                        if data_str.strip() == "[DONE]":
+                            break
+                        
+                        try:
+                            chunk_data = json.loads(data_str)
+                            delta = chunk_data["choices"][0]["delta"].get("content", "")
+                        except Exception:
+                            continue
 
-            except Exception as e:
-                logger.error(f"Network error in Groq stream connection: {str(e)}")
-                yield {"type": "content", "delta": f"Stream connection interrupted: {str(e)}"}
+                        if not in_metadata:
+                            accum += delta
+                            if delimiter in accum:
+                                parts = accum.split(delimiter)
+                                # Yield preceding text
+                                if parts[0]:
+                                    yield {"type": "content", "delta": parts[0]}
+                                metadata_str = parts[1]
+                                in_metadata = True
+                            else:
+                                # Keep look-ahead window, yield the rest
+                                if len(accum) > del_len:
+                                    yield {"type": "content", "delta": accum[:-del_len]}
+                                    accum = accum[-del_len:]
+                        else:
+                            metadata_str += delta
+
+            # Process final metadata payload
+            if in_metadata:
+                try:
+                    start_idx = metadata_str.find("{")
+                    end_idx = metadata_str.rfind("}")
+                    if start_idx != -1 and end_idx != -1:
+                        meta_json = json.loads(metadata_str[start_idx:end_idx+1])
+                        yield {
+                            "type": "metadata",
+                            "citations": meta_json.get("citations", []),
+                            "confidence_score": meta_json.get("confidence_score", 0.0),
+                            "sufficient_context": meta_json.get("sufficient_context", True)
+                        }
+                        return
+                except Exception as parse_ex:
+                    logger.error(f"Error parsing metadata JSON from stream: {str(parse_ex)}")
+            
+            # Fallback empty metadata if not parsed
+            yield {"type": "metadata", "citations": [], "confidence_score": 0.0, "sufficient_context": False}
+
+        except Exception as e:
+            logger.error(f"Network error in Groq stream connection: {str(e)}")
+            yield {"type": "content", "delta": f"Stream connection interrupted: {str(e)}"}
 
     def _parse_raw_llm_response(self, text: str) -> Dict[str, Any]:
         """

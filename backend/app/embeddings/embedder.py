@@ -22,6 +22,7 @@ class HuggingFaceEmbedder(BaseEmbedder):
         self.model_name = model_name
         self.api_url = f"https://router.huggingface.co/hf-inference/models/{self.model_name}"
         self.headers = {"Authorization": f"Bearer {settings.HF_API_KEY}"} if settings.HF_API_KEY else {}
+        self.client = httpx.Client()
 
     async def embed_documents(self, texts: List[str], max_retries: int = 5) -> List[List[float]]:
         """
@@ -42,13 +43,12 @@ class HuggingFaceEmbedder(BaseEmbedder):
 
         def _sync_embed(attempt: int) -> Any:
             logger.info(f"Requesting embeddings from HF Inference API for {len(texts)} texts (Attempt {attempt + 1}/{max_retries})...")
-            with httpx.Client() as client:
-                return client.post(
-                    self.api_url,
-                    json=payload,
-                    headers=self.headers,
-                    timeout=15.0  # Fail fast — cold HF model loads > 15s should retry
-                )
+            return self.client.post(
+                self.api_url,
+                json=payload,
+                headers=self.headers,
+                timeout=15.0  # Fail fast — cold HF model loads > 15s should retry
+            )
 
         for attempt in range(max_retries):
             try:

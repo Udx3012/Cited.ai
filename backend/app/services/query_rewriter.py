@@ -86,8 +86,8 @@ def _is_well_formed(query: str) -> bool:
     if _CONVERSATIONAL_OPENERS.match(q):
         return False
 
-    # No conversational opener and ≥4 words → treat as well-formed
-    if word_count >= 4:
+    # No conversational opener and ≥3 words → treat as well-formed
+    if word_count >= 3:
         return True
 
     return False
@@ -129,6 +129,7 @@ class QueryRewriter:
     def __init__(self) -> None:
         self._api_url = "https://api.groq.com/openai/v1/chat/completions"
         self._headers: dict = {}   # built lazily so hot-reload picks up key changes
+        self._client = httpx.AsyncClient()
 
     def _get_headers(self) -> dict:
         return {
@@ -210,13 +211,12 @@ class QueryRewriter:
         }
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    self._api_url,
-                    json=payload,
-                    headers=self._get_headers(),
-                    timeout=5.0,  # hard 5-second ceiling
-                )
+            response = await self._client.post(
+                self._api_url,
+                json=payload,
+                headers=self._get_headers(),
+                timeout=5.0,  # hard 5-second ceiling
+            )
 
             if response.status_code != 200:
                 logger.warning(
