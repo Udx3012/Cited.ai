@@ -148,8 +148,9 @@ export default function ChatSandbox() {
   const handleChatFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (!file.name.toLowerCase().endsWith(".pdf")) {
-        alert("The ingestion pipeline only supports PDF files.");
+      const ext = "." + (file.name.split(".").pop()?.toLowerCase() || "");
+      if (!["pdf", "docx", "doc"].map(e => "." + e).includes(ext)) {
+        alert("Only PDF (.pdf) and DOCX (.docx) documents can be uploaded.");
         return;
       }
 
@@ -546,7 +547,7 @@ export default function ChatSandbox() {
           <input 
             type="file"
             id="chat-file-upload"
-            accept="application/pdf"
+            accept="application/pdf,.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             onChange={handleChatFileUpload}
             disabled={isGenerating}
             className="hidden"

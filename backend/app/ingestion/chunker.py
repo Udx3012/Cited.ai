@@ -1,6 +1,6 @@
 import re
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,8 @@ class DocumentChunker:
         """
         Processes parsed pages and performs structure-aware paragraph chunking.
         Attempts to preserve headings, sentence boundaries, and attaches page-level metadata.
+        Reads optional 'heading', 'title', and 'source_format' keys from each page dict
+        to enrich chunk metadata (backward-compatible with PDF-only page dicts).
         """
         logger.info(f"Chunking document '{filename}' (ID: {document_id}) with size={chunk_size}, overlap={chunk_overlap}")
         chunks = []
@@ -31,6 +33,17 @@ class DocumentChunker:
         for page in parsed_pages:
             page_num = page["page_number"]
             page_text = page["text"]
+
+            # Honour heading/title/source_format from richer parsers (DOCX, etc.);
+            # fall back to regex detection for plain PDF pages.
+            page_heading: Optional[str] = page.get("heading")
+            page_title: Optional[str] = page.get("title")
+            source_format: str = page.get("source_format", "pdf")
+            is_ocr: bool = page.get("is_ocr", False)
+
+            # Pre-seed heading from the page dict if available
+            if page_heading:
+                current_heading = page_heading
             
             # Split page content into paragraphs
             paragraphs = [p.strip() for p in page_text.split("\n") if p.strip()]
@@ -38,11 +51,12 @@ class DocumentChunker:
             current_chunk_text = ""
             
             for para in paragraphs:
-                # Check if this paragraph looks like a heading
-                heading_match = heading_pattern.match(para)
-                if heading_match:
-                    current_heading = para
-                    logger.debug(f"Detected heading: '{current_heading}' on page {page_num}")
+                # Check if this paragraph looks like a heading (regex fallback for PDFs)
+                if not page_heading:
+                    heading_match = heading_pattern.match(para)
+                    if heading_match:
+                        current_heading = para
+                        logger.debug(f"Detected heading: '{current_heading}' on page {page_num}")
                 
                 # If adding the paragraph exceeds chunk_size, emit the current chunk
                 if len(current_chunk_text) + len(para) > chunk_size and current_chunk_text:
@@ -59,7 +73,9 @@ class DocumentChunker:
                             "document_name": filename,
                             "page": page_num,
                             "heading": current_heading,
-                            "is_ocr": page["is_ocr"]
+                            "is_ocr": is_ocr,
+                            "source_format": source_format,
+                            "title": page_title,
                         }
                     })
                     chunk_index += 1
@@ -86,7 +102,9 @@ class DocumentChunker:
                         "document_name": filename,
                         "page": page_num,
                         "heading": current_heading,
-                        "is_ocr": page["is_ocr"]
+                        "is_ocr": is_ocr,
+                        "source_format": source_format,
+                        "title": page_title,
                     }
                 })
                 chunk_index += 1

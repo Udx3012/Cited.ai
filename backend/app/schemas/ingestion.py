@@ -7,6 +7,7 @@ class UploadResponse(BaseModel):
     document_id: str
     filename: str
     storage_url: str
+    file_type: str  # "pdf" | "docx"
     message: str
 
 class JobStatusResponse(BaseModel):

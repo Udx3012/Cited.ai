@@ -27,6 +27,15 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     HF_API_KEY: str = ""
 
+    # Query Rewriter settings
+    QUERY_REWRITER_ENABLED: bool = True
+    QUERY_REWRITER_MODEL: str = "llama-3.1-8b-instant"
+
+    # Semantic Cache Settings
+    CACHE_ENABLED: bool = True
+    CACHE_TTL_SECONDS: int = 3600
+    CACHE_SIMILARITY_THRESHOLD: float = 0.90
+
     # Supabase storage credentials
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""

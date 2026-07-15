@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from app.schemas.retrieval import CacheStatsResponse
 
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=2, description="The user's conversational query")
@@ -21,3 +22,10 @@ class ChatResponse(BaseModel):
     confidence_score: float
     sufficient_context: bool
     latency_ms: int
+    # Query rewriting observability fields
+    original_query: str               # always the raw user input
+    rewritten_query: Optional[str]    # retrieval-optimized form; None when not rewritten
+    was_rewritten: bool               # True when the rewriter transformed the query
+    rewrite_latency_ms: int           # time spent in the query rewriter step (0 when skipped)
+    cache_hit: bool                   # True if response came from cache
+    cache_stats: CacheStatsResponse   # cache hit/miss statistics

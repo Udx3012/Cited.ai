@@ -9,6 +9,40 @@ import {
   X, Database, HelpCircle, File, ChevronDown, Check, AlertCircle
 } from "lucide-react";
 
+// Supported upload formats (PDF + DOCX)
+const SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".doc"];
+const SUPPORTED_MIME_TYPES = [
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/msword",
+];
+
+function getFileFormat(filename: string): "pdf" | "docx" | "unknown" {
+  const ext = filename.split(".").pop()?.toLowerCase() || "";
+  if (ext === "pdf") return "pdf";
+  if (ext === "docx" || ext === "doc") return "docx";
+  return "unknown";
+}
+
+function FormatBadge({ filename }: { filename: string }) {
+  const fmt = getFileFormat(filename);
+  if (fmt === "pdf") {
+    return (
+      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#45A29E]/10 border border-[#45A29E]/20 text-[#45A29E] shrink-0">
+        PDF
+      </span>
+    );
+  }
+  if (fmt === "docx") {
+    return (
+      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400 shrink-0">
+        DOCX
+      </span>
+    );
+  }
+  return null;
+}
+
 interface DocumentFile {
   id: string;
   name: string;
@@ -201,8 +235,9 @@ export default function DocumentsLibrary() {
   // Process incoming files
   const processUploadedFiles = (files: FileList) => {
     Array.from(files).forEach(file => {
-      if (!file.name.toLowerCase().endsWith(".pdf")) {
-        alert("The ingestion pipeline only supports PDF files.");
+      const ext = "." + (file.name.split(".").pop()?.toLowerCase() || "");
+      if (!SUPPORTED_EXTENSIONS.includes(ext)) {
+        alert(`Unsupported file "${file.name}". Only PDF (.pdf) and DOCX (.docx) documents are accepted.`);
         return;
       }
 
@@ -393,7 +428,7 @@ export default function DocumentsLibrary() {
             type="file" 
             id="lib-file-upload" 
             multiple
-            accept="application/pdf"
+            accept="application/pdf,.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             onChange={handleFileBrowse}
             className="hidden" 
           />
@@ -425,7 +460,7 @@ export default function DocumentsLibrary() {
           Drag & drop your documents here
         </h3>
         <p className="text-zinc-400 text-xs font-normal max-w-sm mb-4 leading-relaxed">
-          Supports PDF documents only. Max file size: 50MB.
+          Supports <strong className="text-zinc-300">PDF</strong> and <strong className="text-zinc-300">DOCX</strong> documents. Max file size: 50MB.
         </p>
 
         <label 
@@ -475,10 +510,13 @@ export default function DocumentsLibrary() {
                     <div className="flex items-center gap-2.5 truncate">
                       <FileText className="w-4 h-4 text-zinc-400 shrink-0" />
                       <div className="truncate text-left">
-                        <span className="text-xs font-semibold text-zinc-200 block truncate max-w-[180px]" title={item.name}>
+                        <span className="text-xs font-semibold text-zinc-200 block truncate max-w-[160px]" title={item.name}>
                           {item.name}
                         </span>
-                        <span className="text-xs text-zinc-400 font-mono">{item.size}</span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-xs text-zinc-400 font-mono">{item.size}</span>
+                          <FormatBadge filename={item.name} />
+                        </div>
                       </div>
                     </div>
 
@@ -681,9 +719,12 @@ export default function DocumentsLibrary() {
                         <FileText className="w-5 h-5 text-[#45A29E]" />
                       </div>
                       <div className="truncate max-w-[140px]">
-                        <h4 className="text-xs font-semibold text-zinc-200 truncate group-hover:text-white transition-colors" title={doc.name}>
-                          {doc.name}
-                        </h4>
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <h4 className="text-xs font-semibold text-zinc-200 truncate group-hover:text-white transition-colors" title={doc.name}>
+                            {doc.name}
+                          </h4>
+                          <FormatBadge filename={doc.name} />
+                        </div>
                         <span className="text-xs text-zinc-400 font-mono">{doc.size}</span>
                       </div>
                     </div>
@@ -782,6 +823,7 @@ export default function DocumentsLibrary() {
                         <td className="py-3 font-medium text-zinc-200 flex items-center gap-3">
                           <FileText className="w-4 h-4 text-zinc-400" />
                           <span>{doc.name}</span>
+                          <FormatBadge filename={doc.name} />
                         </td>
                         <td className="py-3 font-mono text-zinc-400">{doc.size}</td>
                         <td className="py-3 font-mono text-zinc-350">{doc.pages} p.</td>

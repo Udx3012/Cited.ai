@@ -6,12 +6,15 @@ import json
 import logging
 from typing import List, Dict, Any
 from app.schemas.chat import ChatRequest, ChatResponse, CitationMeta
+from app.schemas.retrieval import CacheStatsResponse
 from app.embeddings.embedder import hf_embedder
 from app.services.qdrant import qdrant_service
 from app.retrieval.bm25 import bm25_service
 from app.retrieval.fusion import ReciprocalRankFusion
 from app.reranker.rerank import hf_reranker
 from app.services.groq import groq_service
+from app.services.query_rewriter import query_rewriter
+from app.services.semantic_cache import semantic_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -118,7 +121,13 @@ async def chat_completions(payload: ChatRequest):
                 citations=[],
                 confidence_score=0.0,
                 sufficient_context=False,
-                latency_ms=0
+                latency_ms=0,
+                original_query=payload.query,
+                rewritten_query=None,
+                was_rewritten=False,
+                rewrite_latency_ms=0,
+                cache_hit=False,
+                cache_stats=CacheStatsResponse(**semantic_cache.get_stats()),
             )
 
     try:
@@ -143,47 +152,97 @@ async def chat_completions(payload: ChatRequest):
                     citations=[],
                     confidence_score=1.0,
                     sufficient_context=True,
-                    latency_ms=total_latency
+                    latency_ms=total_latency,
+                    original_query=payload.query,
+                    rewritten_query=None,
+                    was_rewritten=False,
+                    rewrite_latency_ms=0,
+                    cache_hit=False,
+                    cache_stats=CacheStatsResponse(**semantic_cache.get_stats()),
                 )
 
-        # --- Step 1: Parallel Embed + BM25 ---
-        # Run HF embedding and BM25 concurrently to eliminate sequential wait.
-        loop = asyncio.get_event_loop()
+        # --- Step 0: Intelligent Query Rewriting ---
+        rewrite_result = await query_rewriter.rewrite(payload.query)
+        retrieval_query = rewrite_result.rewritten_query
+        logger.info(
+            f"Query rewriter: was_rewritten={rewrite_result.was_rewritten}, "
+            f"retrieval_query='{retrieval_query}', latency={rewrite_result.latency_ms}ms"
+        )
 
-        async def _embed_query():
-            return await hf_embedder.embed_documents([payload.query])
-
-        async def _bm25_query():
-            # BM25 is CPU-bound/in-memory — run in executor to not block the event loop
-            return await loop.run_in_executor(
-                None, bm25_service.retrieve_sparse, payload.query, 20
-            )
-
-        embed_task  = asyncio.ensure_future(_embed_query())
-        bm25_task   = asyncio.ensure_future(_bm25_query())
-
+        # Generate embedding vector for cache comparison and dense retrieval
+        query_vector = [0.0] * 1024
         try:
-            query_vectors_list, sparse_results = await asyncio.gather(embed_task, bm25_task)
+            query_vectors = await hf_embedder.embed_documents([retrieval_query])
+            if query_vectors:
+                query_vector = query_vectors[0]
+        except Exception as embed_ex:
+            logger.error(f"Failed to generate query embedding: {str(embed_ex)}")
+
+        # --- Step 0.5: Semantic Cache Lookup ---
+        cache_match = None
+        if query_vector and any(val != 0.0 for val in query_vector):
+            cache_match = semantic_cache.get(retrieval_query, query_vector, entry_type="chat")
+
+        if cache_match:
+            # Cache Hit path
+            cached_citations = [CitationMeta(**c) for c in (cache_match.citations or [])]
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
+            
+            logger.info(f"SemanticCache: HIT for query='{payload.query}' served in {latency_ms}ms.")
+
+            if payload.stream:
+                # convert cached answer into a single SSE stream chunk response for seamless UX
+                async def sse_cached_generator():
+                    yield f"data: {json.dumps({'type': 'content', 'delta': cache_match.answer or ''})}\n\n"
+                    yield f"data: {json.dumps({
+                        'type': 'metadata',
+                        'citations': [c.model_dump() for c in cached_citations],
+                        'confidence_score': cache_match.confidence_score,
+                        'sufficient_context': cache_match.sufficient_context,
+                        'cache_hit': True,
+                    })}\n\n"
+                return StreamingResponse(sse_cached_generator(), media_type="text/event-stream")
+            else:
+                return ChatResponse(
+                    success=True,
+                    answer=cache_match.answer or "",
+                    citations=cached_citations,
+                    confidence_score=cache_match.confidence_score,
+                    sufficient_context=cache_match.sufficient_context,
+                    latency_ms=latency_ms,
+                    original_query=payload.query,
+                    rewritten_query=cache_match.rewritten_query if cache_match.was_rewritten else None,
+                    was_rewritten=cache_match.was_rewritten,
+                    rewrite_latency_ms=rewrite_result.latency_ms,
+                    cache_hit=True,
+                    cache_stats=CacheStatsResponse(**semantic_cache.get_stats()),
+                )
+
+        # --- Cache Miss path: Execute full pipeline ---
+        # Run BM25 concurrently/async (since we already have the embedding vector)
+        loop = asyncio.get_event_loop()
+        try:
+            sparse_results = await loop.run_in_executor(
+                None, bm25_service.retrieve_sparse, retrieval_query, 20
+            )
         except Exception as e:
-            logger.error(f"Parallel embed/BM25 failed: {str(e)}")
-            query_vectors_list, sparse_results = [], []
+            logger.error(f"BM25 retrieval failed: {str(e)}")
+            sparse_results = []
 
         # --- Step 2: Dense Retrieval (Qdrant Cloud) ---
         dense_results = []
-        if qdrant_service.client and query_vectors_list:
+        if qdrant_service.client and any(val != 0.0 for val in query_vector):
             try:
-                query_vector = query_vectors_list[0]
-
-                # Qdrant .search() is synchronous — run in executor to avoid blocking the event loop
-                def _qdrant_search():
-                    return qdrant_service.client.search(
+                # Qdrant search using the pre-computed query_vector
+                search_results = await loop.run_in_executor(
+                    None,
+                    lambda: qdrant_service.client.search(
                         collection_name=qdrant_service.collection_name,
                         query_vector=query_vector,
                         limit=20,
                         with_payload=True
                     )
-
-                search_results = await loop.run_in_executor(None, _qdrant_search)
+                )
 
                 for point in search_results:
                     payload_data = point.payload or {}
@@ -209,13 +268,10 @@ async def chat_completions(payload: ChatRequest):
             dense_results=dense_results,
             sparse_results=sparse_results,
             k=60,
-            limit=15  # Pass top 15 fused candidates to the reranker
+            limit=15
         )
 
-        # --- Step 4: Cross-Encoder Reranking (bge-reranker-base) ---
-        # Skip reranking when there are ≤3 candidates — RRF ordering is already good
-        # enough and calling HF Serverless for 3 items is wasteful.
-        # Apply an 8-second hard timeout so a cold HF model start doesn't stall the response.
+        # --- Step 4: Cross-Encoder Reranking ---
         reranked_chunks = []
         if len(fused_chunks) > 3:
             try:
@@ -228,32 +284,44 @@ async def chat_completions(payload: ChatRequest):
                 reranked_chunks = fused_chunks
             except Exception as e:
                 logger.error(f"Cross-encoder reranking failed: {str(e)}")
-                reranked_chunks = fused_chunks  # Fallback to fusion ranking order
+                reranked_chunks = fused_chunks
         else:
-            reranked_chunks = fused_chunks  # ≤3 chunks — skip reranker
+            reranked_chunks = fused_chunks
 
-        # Truncate context to top 5 chunks for LLM context size and prompt efficiency
         context_chunks = reranked_chunks[:5]
 
-        # 2. AI Guardrail: Confidence-based response filtering
+        # AI Guardrail: Confidence-based response filtering
         insufficient_context = False
-        if not is_general_chat(payload.query):
-            if not context_chunks:
-                insufficient_context = True
-            else:
-                # Log metrics for debugging, but bypass hard filtering to let the 70B LLM judge groundedness
-                max_vector_score = max(c.get("vector_score", 0.0) for c in context_chunks)
-                max_bm25_score   = max(c.get("bm25_score", 0.0) for c in context_chunks)
-                max_rerank_score = max(c.get("rerank_score", 0.0) for c in context_chunks)
-                logger.info(
-                    f"Retrieval scores: vector={max_vector_score:.4f}, "
-                    f"bm25={max_bm25_score:.2f}, rerank={max_rerank_score:.4f}. "
-                    f"Bypassing guardrail threshold, delegating grounding decision to LLM."
-                )
+        if not context_chunks:
+            insufficient_context = True
+        else:
+            max_vector_score = max(c.get("vector_score", 0.0) for c in context_chunks)
+            max_bm25_score   = max(c.get("bm25_score", 0.0) for c in context_chunks)
+            max_rerank_score = max(c.get("rerank_score", 0.0) for c in context_chunks)
+            logger.info(
+                f"Retrieval scores: vector={max_vector_score:.4f}, "
+                f"bm25={max_bm25_score:.2f}, rerank={max_rerank_score:.4f}."
+            )
 
         if insufficient_context:
             logger.info("Guardrail Check: Retrieval confidence below threshold. Refusing query.")
             refusal_text = "Insufficient information found in the uploaded documents."
+            
+            # Store refusal in cache
+            if any(val != 0.0 for val in query_vector):
+                semantic_cache.set(
+                    query=payload.query,
+                    query_embedding=query_vector,
+                    entry_type="chat",
+                    latency_ms=int((time.perf_counter() - start_time) * 1000),
+                    rewritten_query=retrieval_query,
+                    was_rewritten=rewrite_result.was_rewritten,
+                    answer=refusal_text,
+                    citations=[],
+                    confidence_score=0.0,
+                    sufficient_context=False
+                )
+
             if payload.stream:
                 async def sse_insufficient_refusal():
                     yield f"data: {json.dumps({'type': 'content', 'delta': refusal_text})}\n\n"
@@ -266,17 +334,27 @@ async def chat_completions(payload: ChatRequest):
                     citations=[],
                     confidence_score=0.0,
                     sufficient_context=False,
-                    latency_ms=int((time.perf_counter() - start_time) * 1000)
+                    latency_ms=int((time.perf_counter() - start_time) * 1000),
+                    original_query=payload.query,
+                    rewritten_query=rewrite_result.rewritten_query if rewrite_result.was_rewritten else None,
+                    was_rewritten=rewrite_result.was_rewritten,
+                    rewrite_latency_ms=rewrite_result.latency_ms,
+                    cache_hit=False,
+                    cache_stats=CacheStatsResponse(**semantic_cache.get_stats()),
                 )
 
         # --- Step 5: Generation (Groq Llama 3) ---
         if payload.stream:
-            # SSE streaming generator yielding token deltas and final metadata
             async def sse_event_generator():
+                accumulated_answer = ""
+                final_meta = {}
                 try:
                     async for event in groq_service.generate_grounded_answer_stream(payload.query, context_chunks):
-                        if event.get("type") == "metadata":
-                            # AI Guardrail: Validate citation indices in event payload
+                        if event.get("type") == "content":
+                            accumulated_answer += event.get("delta", "")
+                            
+                        elif event.get("type") == "metadata":
+                            # Validate citation indices
                             validated_citations = []
                             for c in event.get("citations", []):
                                 cit_id = c.get("id")
@@ -285,7 +363,6 @@ async def chat_completions(payload: ChatRequest):
                                     validated_citations.append({
                                         "id": cit_id,
                                         "source": chunk.get("document_name", "unknown"),
-                                        # fusion.py stores page under key "page", not "page_number"
                                         "page": chunk.get("page", chunk.get("page_number", 1)),
                                         "chunk": chunk.get("chunk_index", 0),
                                         "matched_text": c.get("matched_text") or chunk.get("text", "")[:200],
@@ -294,7 +371,24 @@ async def chat_completions(payload: ChatRequest):
                                         "rerank_score": chunk.get("rerank_score", 0.0)
                                     })
                             event["citations"] = validated_citations
+                            final_meta = event
                         yield f"data: {json.dumps(event)}\n\n"
+                    
+                    # Store streaming results in cache on completion
+                    if accumulated_answer and any(val != 0.0 for val in query_vector):
+                        latency_ms = int((time.perf_counter() - start_time) * 1000)
+                        semantic_cache.set(
+                            query=payload.query,
+                            query_embedding=query_vector,
+                            entry_type="chat",
+                            latency_ms=latency_ms,
+                            rewritten_query=retrieval_query,
+                            was_rewritten=rewrite_result.was_rewritten,
+                            answer=accumulated_answer,
+                            citations=final_meta.get("citations", []),
+                            confidence_score=final_meta.get("confidence_score", 0.0),
+                            sufficient_context=final_meta.get("sufficient_context", True)
+                        )
                 except Exception as stream_ex:
                     logger.error(f"Error in streaming generation: {str(stream_ex)}")
                     yield f"data: {json.dumps({'type': 'content', 'delta': ' [Stream Generation Interrupted]'})}\n\n"
@@ -314,7 +408,6 @@ async def chat_completions(payload: ChatRequest):
                         CitationMeta(
                             id=cit_id,
                             source=chunk.get("document_name", "unknown"),
-                            # fusion.py stores page under key "page", not "page_number"
                             page=chunk.get("page", chunk.get("page_number", 1)),
                             chunk=chunk.get("chunk_index", 0),
                             matched_text=item.get("matched_text") or chunk.get("text", "")[:200]
@@ -324,13 +417,34 @@ async def chat_completions(payload: ChatRequest):
             total_latency = int((time.perf_counter() - start_time) * 1000)
             logger.info(f"Completions query generated in {total_latency}ms.")
 
+            # Store result in cache
+            if any(val != 0.0 for val in query_vector):
+                semantic_cache.set(
+                    query=payload.query,
+                    query_embedding=query_vector,
+                    entry_type="chat",
+                    latency_ms=total_latency,
+                    rewritten_query=retrieval_query,
+                    was_rewritten=rewrite_result.was_rewritten,
+                    answer=rag_output.get("answer", ""),
+                    citations=[c.model_dump() for c in meta_citations],
+                    confidence_score=float(rag_output.get("confidence_score", 0.0)),
+                    sufficient_context=bool(rag_output.get("sufficient_context", False))
+                )
+
             return ChatResponse(
                 success=True,
                 answer=rag_output.get("answer", ""),
                 citations=meta_citations,
                 confidence_score=float(rag_output.get("confidence_score", 0.0)),
                 sufficient_context=bool(rag_output.get("sufficient_context", False)),
-                latency_ms=total_latency
+                latency_ms=total_latency,
+                original_query=payload.query,
+                rewritten_query=rewrite_result.rewritten_query if rewrite_result.was_rewritten else None,
+                was_rewritten=rewrite_result.was_rewritten,
+                rewrite_latency_ms=rewrite_result.latency_ms,
+                cache_hit=False,
+                cache_stats=CacheStatsResponse(**semantic_cache.get_stats()),
             )
 
     except Exception as e:
