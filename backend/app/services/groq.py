@@ -237,5 +237,45 @@ class GroqService:
             "sufficient_context": False
         }
 
-# Export default instanced service
-groq_service = GroqService()
+from app.services.gemini import gemini_service
+
+class GroundedGeneratorDispatcher:
+    def __init__(self):
+        self.groq = GroqService()
+        self.gemini = gemini_service
+
+    async def generate_grounded_answer(self, query: str, context_chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Generates grounded answer trying Gemini first, falling back to Groq Llama 3
+        seamlessly if Gemini fails or is unconfigured.
+        """
+        if settings.GEMINI_API_KEY:
+            try:
+                return await self.gemini.generate_grounded_answer(query, context_chunks)
+            except Exception as e:
+                logger.warning(f"Gemini grounded generation failed, falling back to Groq Llama 3: {str(e)}")
+        
+        return await self.groq.generate_grounded_answer(query, context_chunks)
+
+    async def generate_grounded_answer_stream(
+        self, 
+        query: str, 
+        context_chunks: List[Dict[str, Any]]
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Streams response tokens trying Gemini stream first, falling back to Groq stream
+        seamlessly if Gemini fails to start or is unconfigured.
+        """
+        if settings.GEMINI_API_KEY:
+            try:
+                async for event in self.gemini.generate_grounded_answer_stream(query, context_chunks):
+                    yield event
+                return
+            except Exception as e:
+                logger.warning(f"Gemini grounded streaming failed, falling back to Groq: {str(e)}")
+
+        async for event in self.groq.generate_grounded_answer_stream(query, context_chunks):
+            yield event
+
+# Export default instanced service (acts as dispatcher)
+groq_service = GroundedGeneratorDispatcher()

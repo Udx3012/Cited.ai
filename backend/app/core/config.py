@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     QDRANT_API_KEY: str = ""
     GROQ_API_KEY: str = ""
     HF_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
+    VOYAGE_API_KEY: str = ""
 
     # Query Rewriter settings
     QUERY_REWRITER_ENABLED: bool = True

@@ -107,5 +107,66 @@ class HuggingFaceEmbedder(BaseEmbedder):
         # If already 2D array, return directly
         return data
 
+class VoyageEmbedder(BaseEmbedder):
+    def __init__(self, model_name: str = "voyage-3"):
+        self.model_name = model_name
+        self.api_url = "https://api.voyageai.com/v1/embeddings"
+        self.client = httpx.Client()
+
+    async def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """
+        Retrieves vector embeddings using Voyage AI's API.
+        """
+        if not settings.VOYAGE_API_KEY:
+            raise ValueError("VOYAGE_API_KEY is unconfigured.")
+
+        payload = {
+            "input": texts,
+            "model": self.model_name
+        }
+        headers = {
+            "Authorization": f"Bearer {settings.VOYAGE_API_KEY}",
+            "Content-Type": "application/json"
+        }
+
+        loop = asyncio.get_event_loop()
+
+        def _sync_voyage() -> Any:
+            logger.info(f"Requesting embeddings from Voyage API for {len(texts)} texts...")
+            return self.client.post(
+                self.api_url,
+                json=payload,
+                headers=headers,
+                timeout=12.0
+            )
+
+        response = await loop.run_in_executor(None, _sync_voyage)
+        if response.status_code == 200:
+            res_data = response.json()
+            # Voyage response contains list of { "embedding": [...], "index": 0 }
+            embeddings = [item["embedding"] for item in res_data["data"]]
+            return embeddings
+        else:
+            raise Exception(f"Voyage API returned status code {response.status_code}: {response.text}")
+
+class GroundedEmbedder(BaseEmbedder):
+    def __init__(self):
+        self.voyage = VoyageEmbedder()
+        self.hf = HuggingFaceEmbedder()
+
+    async def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """
+        Retrieves vector embeddings trying Voyage AI first, and falling back
+        seamlessly to Hugging Face if Voyage fails or is unconfigured.
+        """
+        if settings.VOYAGE_API_KEY:
+            try:
+                return await self.voyage.embed_documents(texts)
+            except Exception as e:
+                logger.warning(f"Voyage AI embedding generation failed, falling back to Hugging Face: {str(e)}")
+        
+        # Fall back to Hugging Face Serverless API
+        return await self.hf.embed_documents(texts)
+
 # Export default instanced embedder
-hf_embedder = HuggingFaceEmbedder()
+hf_embedder = GroundedEmbedder()
