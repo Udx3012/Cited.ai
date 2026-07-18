@@ -33,6 +33,9 @@ class ReciprocalRankFusion:
             chunk_id = str(chunk["id"])
             if chunk_id not in chunk_map:
                 chunk_map[chunk_id] = chunk
+            else:
+                # Merge sparse bm25_score into pre-existing dense chunk structure
+                chunk_map[chunk_id]["bm25_score"] = float(chunk.get("bm25_score", 0.0))
                 
             rank = idx + 1
             current_score = rrf_scores.get(chunk_id, 0.0)
