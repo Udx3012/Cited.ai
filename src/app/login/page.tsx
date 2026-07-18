@@ -245,6 +245,18 @@ export default function LoginPage() {
             </button>
           </form>
 
+          <div className="mt-6 flex flex-col items-center">
+            <button
+              onClick={() => {
+                sessionStorage.setItem("guest_mode", "true");
+                router.replace("/dashboard");
+              }}
+              className="text-xs text-zinc-300 hover:text-[#45A29E] font-medium transition-colors cursor-pointer"
+            >
+              Continue without login (Guest Mode)
+            </button>
+          </div>
+
         </div>
       </main>
 

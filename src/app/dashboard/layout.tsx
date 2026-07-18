@@ -31,6 +31,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
+    const isGuest = typeof window !== "undefined" && sessionStorage.getItem("guest_mode") === "true";
+    
+    if (isGuest) {
+      setUser({ email: "guest@cited.ai", id: "guest" });
+      setLoadingUser(false);
+      return;
+    }
+
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -43,6 +51,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     checkUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentGuest = typeof window !== "undefined" && sessionStorage.getItem("guest_mode") === "true";
+      if (currentGuest) return;
+
       if (!session) {
         router.replace("/login");
       } else {
@@ -345,6 +356,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <DropdownMenu.Separator className="h-px bg-white/[0.03] my-1" />
                   <DropdownMenu.Item 
                     onClick={async () => {
+                      if (typeof window !== "undefined") {
+                        sessionStorage.removeItem("guest_mode");
+                      }
                       await supabase.auth.signOut();
                       router.push("/login");
                     }}
