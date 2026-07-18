@@ -9,6 +9,7 @@ import {
   FileCheck, AlertTriangle
 } from "lucide-react";
 import { useGSAPAnimations } from "@/hooks/useGSAPAnimations";
+import SmoothScroll from "@/components/SmoothScroll";
 
 // Helper: split text into individual character spans for GSAP targeting
 function SplitChars({ children, className = "" }: { children: string; className?: string }) {
@@ -255,7 +256,8 @@ export default function Home() {
   ];
 
   return (
-    <div className="relative min-h-screen bg-[#030303] text-zinc-200">
+    <SmoothScroll>
+      <div className="relative min-h-screen bg-[#030303] text-zinc-200">
 
       {/* Noise Texture Overlay — premium grain */}
       <div className="noise-overlay" />
@@ -1113,6 +1115,7 @@ export default function Home() {
         </div>
       </footer>
 
-    </div>
+      </div>
+    </SmoothScroll>
   );
 }

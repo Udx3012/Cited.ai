@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Instrument_Serif, Inter } from "next/font/google";
 import "./globals.css";
-import SmoothScroll from "@/components/SmoothScroll";
 
 const instrumentSerif = Instrument_Serif({
   variable: "--font-serif",
@@ -34,9 +33,7 @@ export default function RootLayout({
       className={`${instrumentSerif.variable} ${inter.variable} h-full antialiased dark`}
     >
       <body className="min-h-full flex flex-col bg-[#030303] text-zinc-100 font-sans selection:bg-[#c5a880]/30 selection:text-white">
-        <SmoothScroll>
-          {children}
-        </SmoothScroll>
+        {children}
       </body>
     </html>
   );
