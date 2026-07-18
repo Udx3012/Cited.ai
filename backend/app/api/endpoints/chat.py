@@ -138,6 +138,10 @@ async def chat_completions(payload: ChatRequest):
         )
         is_asking_about_docs = bool(doc_query_pattern.search(payload.query))
 
+        # Detect domain-specific profile/resume query terms
+        profile_keywords = {"accomplish", "achiev", "award", "honor", "rank", "extracurricular", "publication", "certif", "patent", "project"}
+        is_profile_query = any(kw in payload.query.lower() for kw in profile_keywords)
+
         # --- Step 0.1: Exact Cache Match (Ultra-Fast Path) ---
         cache_match = semantic_cache.get_exact(payload.query, entry_type="chat")
         if cache_match:
@@ -373,7 +377,9 @@ async def chat_completions(payload: ChatRequest):
                 f"bm25={max_bm25_score:.2f}, rerank={max_rerank_score:.4f}."
             )
             # Refuse query if both semantic (dense) similarity and keyword (sparse) overlap are too low
-            if max_vector_score < 0.65 and max_bm25_score < 1.0:
+            # Lower the vector score threshold for domain-specific profile/resume queries to prevent false rejections
+            vector_threshold = 0.58 if is_profile_query else 0.65
+            if max_vector_score < vector_threshold and max_bm25_score < 1.0:
                 insufficient_context = True
 
         if insufficient_context:
