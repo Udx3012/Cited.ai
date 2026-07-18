@@ -67,17 +67,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
   }, [router]);
 
-  if (loadingUser) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-[#030303]">
-        <div className="flex flex-col items-center gap-3">
-          <RefreshCw className="w-8 h-8 text-[#45A29E] animate-spin" />
-          <span className="text-xs text-zinc-400 font-mono uppercase tracking-wider font-semibold">Verifying session...</span>
-        </div>
-      </div>
-    );
-  }
-  
   // Keyboard shortcut listener for command palette (Ctrl+K or Cmd+K)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -89,6 +78,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  if (loadingUser) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-[#030303]">
+        <div className="flex flex-col items-center gap-3">
+          <RefreshCw className="w-8 h-8 text-[#45A29E] animate-spin" />
+          <span className="text-xs text-zinc-400 font-mono uppercase tracking-wider font-semibold">Verifying session...</span>
+        </div>
+      </div>
+    );
+  }
 
   // Navigation items
   const navItems = [
