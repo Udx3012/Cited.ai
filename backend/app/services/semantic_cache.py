@@ -127,6 +127,37 @@ class SemanticCache:
             logger.debug(f"SemanticCache: MISS for query='{query}'")
             return None
 
+    def get_exact(self, query: str, entry_type: str) -> Optional[CacheEntry]:
+        """
+        Looks up an exact string match (case-insensitive) of `entry_type` in the cache.
+        Bypasses embedding vector similarity calculation to respond instantly (<1ms).
+        """
+        if not settings.CACHE_ENABLED:
+            return None
+
+        now = time.time()
+        ttl = settings.CACHE_TTL_SECONDS
+
+        with self._lock:
+            # 1. Clean expired entries
+            expired_indices = []
+            for idx, entry in enumerate(self._cache):
+                if now - entry.created_at > ttl:
+                    expired_indices.append(idx)
+            for idx in sorted(expired_indices, reverse=True):
+                self._cache.pop(idx)
+
+            # 2. Check for exact match
+            q_clean = query.strip().lower()
+            for entry in self._cache:
+                if entry.entry_type == entry_type and entry.original_query.strip().lower() == q_clean:
+                    self._hits += 1
+                    self._total_saved_latency_ms += entry.latency_ms
+                    logger.info(f"SemanticCache: EXACT HIT for query='{query}' (saved={entry.latency_ms}ms)")
+                    return entry
+
+            return None
+
     # ------------------------------------------------------------------
     # Cache Store
     # ------------------------------------------------------------------

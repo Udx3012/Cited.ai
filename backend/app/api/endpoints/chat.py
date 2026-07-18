@@ -138,6 +138,40 @@ async def chat_completions(payload: ChatRequest):
         )
         is_asking_about_docs = bool(doc_query_pattern.search(payload.query))
 
+        # --- Step 0.1: Exact Cache Match (Ultra-Fast Path) ---
+        cache_match = semantic_cache.get_exact(payload.query, entry_type="chat")
+        if cache_match:
+            cached_citations = [CitationMeta(**c) for c in (cache_match.citations or [])]
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
+            logger.info(f"SemanticCache: Exact HIT for query='{payload.query}' served in {latency_ms}ms.")
+            if payload.stream:
+                async def sse_cached_generator():
+                    yield f"data: {json.dumps({'type': 'content', 'delta': cache_match.answer or ''})}\n\n"
+                    meta_payload = {
+                        'type': 'metadata',
+                        'citations': [c.model_dump() for c in cached_citations],
+                        'confidence_score': cache_match.confidence_score,
+                        'sufficient_context': cache_match.sufficient_context,
+                        'cache_hit': True,
+                    }
+                    yield f"data: {json.dumps(meta_payload)}\n\n"
+                return StreamingResponse(sse_cached_generator(), media_type="text/event-stream")
+            else:
+                return ChatResponse(
+                    success=True,
+                    answer=cache_match.answer or "",
+                    citations=cached_citations,
+                    confidence_score=cache_match.confidence_score,
+                    sufficient_context=cache_match.sufficient_context,
+                    latency_ms=latency_ms,
+                    original_query=payload.query,
+                    rewritten_query=cache_match.rewritten_query if cache_match.was_rewritten else None,
+                    was_rewritten=cache_match.was_rewritten,
+                    rewrite_latency_ms=0,
+                    cache_hit=True,
+                    cache_stats=CacheStatsResponse(**semantic_cache.get_stats()),
+                )
+
         # --- Early Exit: General Chat / Greetings ---
         # Skip the entire retrieval pipeline for greetings, chit-chat, and identity queries.
         # These do NOT need embeddings, Qdrant search, BM25, or reranking.
