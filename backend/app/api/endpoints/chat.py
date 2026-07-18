@@ -278,7 +278,7 @@ async def chat_completions(payload: ChatRequest):
             try:
                 reranked_chunks = await asyncio.wait_for(
                     hf_reranker.rerank_chunks(retrieval_query, fused_chunks),
-                    timeout=8.0
+                    timeout=3.5
                 )
             except asyncio.TimeoutError:
                 logger.warning("Reranker timed out after 8s — falling back to RRF order.")

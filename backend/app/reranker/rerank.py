@@ -58,7 +58,7 @@ class HuggingFaceReranker(BaseReranker):
                 self.api_url,
                 json=payload,
                 headers=self.headers,
-                timeout=8.0  # Matches the asyncio.wait_for(timeout=8) in chat.py
+                timeout=3.5  # Fail fast to prevent UI blocking
             )
 
         for attempt in range(max_retries):
@@ -128,5 +128,85 @@ class HuggingFaceReranker(BaseReranker):
             
         return scores[:expected_count]
 
+class VoyageReranker(BaseReranker):
+    def __init__(self, model_name: str = "voyage-rerank-2"):
+        self.model_name = model_name
+        self.api_url = "https://api.voyageai.com/v1/rerank"
+        self.client = httpx.Client()
+
+    async def rerank_chunks(self, query: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Queries Voyage AI for high-performance reranking scores.
+        """
+        if not chunks:
+            return []
+
+        if not settings.VOYAGE_API_KEY:
+            raise ValueError("VOYAGE_API_KEY is unconfigured.")
+
+        sentences = [c["text"] for c in chunks]
+        payload = {
+            "query": query,
+            "documents": sentences,
+            "model": self.model_name
+        }
+        headers = {
+            "Authorization": f"Bearer {settings.VOYAGE_API_KEY}",
+            "Content-Type": "application/json"
+        }
+
+        loop = asyncio.get_event_loop()
+
+        def _sync_voyage() -> Any:
+            logger.info(f"Requesting rerank from Voyage API for {len(chunks)} chunks...")
+            return self.client.post(
+                self.api_url,
+                json=payload,
+                headers=headers,
+                timeout=5.0
+            )
+
+        response = await loop.run_in_executor(None, _sync_voyage)
+        if response.status_code == 200:
+            res_data = response.json()
+            results = res_data.get("data", [])
+            
+            # Map scores back to original chunks using index mapping
+            for item in results:
+                idx = item.get("index")
+                if idx is not None and 0 <= idx < len(chunks):
+                    chunks[idx]["rerank_score"] = float(item.get("relevance_score", 0.0))
+
+            # Default un-ranked chunks to 0.0 rerank score
+            for c in chunks:
+                if "rerank_score" not in c:
+                    c["rerank_score"] = 0.0
+
+            # Sort descending by score
+            chunks.sort(key=lambda x: x.get("rerank_score", 0.0), reverse=True)
+            logger.info("Successfully reranked chunks using Voyage reranker.")
+            return chunks
+        else:
+            raise Exception(f"Voyage rerank API returned status code {response.status_code}: {response.text}")
+
+class GroundedReranker(BaseReranker):
+    def __init__(self):
+        self.voyage = VoyageReranker()
+        self.hf = HuggingFaceReranker()
+
+    async def rerank_chunks(self, query: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Dynamically dispatches queries to Voyage Rerank API first, 
+        and falls back to Hugging Face cross-encoder if it fails or is unconfigured.
+        """
+        if settings.VOYAGE_API_KEY:
+            try:
+                return await self.voyage.rerank_chunks(query, chunks)
+            except Exception as e:
+                logger.warning(f"Voyage Reranker failed, falling back to Hugging Face: {str(e)}")
+        
+        # Fall back to Hugging Face Serverless API
+        return await self.hf.rerank_chunks(query, chunks)
+
 # Export default instanced reranker
-hf_reranker = HuggingFaceReranker()
+hf_reranker = GroundedReranker()

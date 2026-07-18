@@ -126,11 +126,13 @@ export default function ChatSandbox() {
   };
 
   // Chat scroll anchor
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom of chat
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
   }, [messages]);
 
   // Clear chat history handler
@@ -452,7 +454,7 @@ export default function ChatSandbox() {
         </div>
 
         {/* Messages viewport */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.map((m) => {
             const isAi = m.sender === "ai";
             return (
@@ -527,7 +529,7 @@ export default function ChatSandbox() {
               </div>
             );
           })}
-          <div ref={scrollRef} />
+
         </div>
 
         {uploadProgress !== null && (
