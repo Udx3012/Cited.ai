@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from "react";
 import { 
   Settings, Key, Layers, Sliders, CheckCircle2, 
-  HelpCircle, Eye, EyeOff, Save, RefreshCw
+  HelpCircle, Eye, EyeOff, Save, RefreshCw, ChevronDown, ChevronUp, AlertTriangle
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function WorkspaceSettings() {
   const [showApiKey, setShowApiKey] = useState(false);
@@ -19,6 +20,7 @@ export default function WorkspaceSettings() {
   const [temperature, setTemperature] = useState(0.0);
   const [backendUrl, setBackendUrl] = useState(process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000/api/v1");
   const [apiKey, setApiKey] = useState("my_super_secret_cited_ai_key_2026");
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Load values on mount
   useEffect(() => {
@@ -113,103 +115,7 @@ export default function WorkspaceSettings() {
           </div>
         </div>
 
-        {/* Section 2: Retrieval Parameters */}
-        <div className="glass-card rounded-2xl p-5 space-y-4">
-          <div className="flex items-center gap-2 border-b border-white/[0.03] pb-3 mb-1">
-            <Sliders className="w-4 h-4 text-[#45A29E]" />
-            <h3 className="text-sm font-semibold text-white">Hybrid Retrieval Weights (RRF)</h3>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {/* Dense search slider */}
-            <div className="space-y-2">
-              <div className="flex justify-between text-xs font-medium text-zinc-300">
-                <span>Dense Search Weight (Qdrant)</span>
-                <span className="font-mono text-[#45A29E] font-bold">{denseWeight}</span>
-              </div>
-              <input 
-                type="range"
-                min="0.0"
-                max="1.0"
-                step="0.05"
-                value={denseWeight}
-                onChange={(e) => {
-                  const val = parseFloat(e.target.value);
-                  setDenseWeight(val);
-                  setSparseWeight(parseFloat((1 - val).toFixed(2)));
-                }}
-                className="w-full h-1.5 bg-zinc-950 rounded-lg appearance-none cursor-pointer accent-[#45A29E]"
-              />
-              <span className="text-xs text-zinc-400 font-normal block leading-relaxed">
-                Prioritizes conceptual/semantic matches over raw wording.
-              </span>
-            </div>
-
-            {/* Sparse search slider */}
-            <div className="space-y-2">
-              <div className="flex justify-between text-xs font-medium text-zinc-300">
-                <span>Sparse Search Weight (BM25)</span>
-                <span className="font-mono text-[#45A29E] font-bold">{sparseWeight}</span>
-              </div>
-              <input 
-                type="range"
-                min="0.0"
-                max="1.0"
-                step="0.05"
-                value={sparseWeight}
-                onChange={(e) => {
-                  const val = parseFloat(e.target.value);
-                  setSparseWeight(val);
-                  setDenseWeight(parseFloat((1 - val).toFixed(2)));
-                }}
-                className="w-full h-1.5 bg-zinc-950 rounded-lg appearance-none cursor-pointer accent-[#45A29E]"
-              />
-              <span className="text-xs text-zinc-400 font-normal block leading-relaxed">
-                Prioritizes exact keyword matches, code symbols, and numbers.
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Section 3: Ingestion & Chunking parameters */}
-        <div className="glass-card rounded-2xl p-5 space-y-4">
-          <div className="flex items-center gap-2 border-b border-white/[0.03] pb-3 mb-1">
-            <Layers className="w-4 h-4 text-[#45A29E]" />
-            <h3 className="text-sm font-semibold text-white">Ingestion Chunking Strategy</h3>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {/* Chunk size input */}
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-zinc-300 block">Chunk Token Size (Characters)</label>
-              <input 
-                type="number"
-                value={chunkSize}
-                onChange={(e) => setChunkSize(parseInt(e.target.value) || 0)}
-                className="bg-zinc-950 text-xs px-4 py-3 rounded-xl border border-white/[0.04] w-full text-zinc-200 focus:outline-none focus:border-[#45A29E]/30 font-semibold font-mono"
-              />
-              <span className="text-xs text-zinc-400 font-normal block">
-                Target length for dividing document paragraphs. Recommended: 500 characters.
-              </span>
-            </div>
-
-            {/* Chunk overlap input */}
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-zinc-300 block">Chunk Overlap (Characters)</label>
-              <input 
-                type="number"
-                value={chunkOverlap}
-                onChange={(e) => setChunkOverlap(parseInt(e.target.value) || 0)}
-                className="bg-zinc-950 text-xs px-4 py-3 rounded-xl border border-white/[0.04] w-full text-zinc-200 focus:outline-none focus:border-[#45A29E]/30 font-semibold font-mono"
-              />
-              <span className="text-xs text-zinc-400 font-normal block">
-                Preserves textual boundary context between adjacent chunks. Recommended: 10%.
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Section 4: AI Model Selection */}
+        {/* Section 2: AI Model Selection */}
         <div className="glass-card rounded-2xl p-5 space-y-4">
           <div className="flex items-center gap-2 border-b border-white/[0.03] pb-3 mb-1">
             <Settings className="w-4 h-4 text-[#45A29E]" />
@@ -219,7 +125,7 @@ export default function WorkspaceSettings() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {/* Model classification */}
             <div className="space-y-2 text-left">
-              <label className="text-xs font-medium text-zinc-300 block">Primary Synthesis Model</label>
+              <label className="text-xs font-medium text-zinc-350 block">Primary Synthesis Model</label>
               <select 
                 value={modelType}
                 onChange={(e) => setModelType(e.target.value)}
@@ -233,7 +139,7 @@ export default function WorkspaceSettings() {
 
             {/* Model temperature */}
             <div className="space-y-2">
-              <div className="flex justify-between text-xs font-medium text-zinc-300">
+              <div className="flex justify-between text-xs font-medium text-zinc-350">
                 <span>Model Temperature (Factual vs Creative)</span>
                 <span className="font-mono text-[#45A29E] font-bold">{temperature}</span>
               </div>
@@ -252,6 +158,144 @@ export default function WorkspaceSettings() {
             </div>
           </div>
         </div>
+
+        {/* Section 3: Advanced Settings Collapsible Toggle */}
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="flex items-center justify-between w-full px-5 py-4 bg-zinc-950 border border-white/[0.04] rounded-2xl hover:border-white/[0.08] transition-all cursor-pointer group"
+          >
+            <div className="flex items-center gap-2.5">
+              <Sliders className="w-4 h-4 text-[#45A29E]" />
+              <span className="text-sm font-semibold text-white">Advanced Search & Ingestion Settings</span>
+            </div>
+            <div className="flex items-center gap-2 text-zinc-400 group-hover:text-zinc-200 transition-colors">
+              <span className="text-xs font-normal">Configure weights & chunking</span>
+              {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </div>
+          </button>
+        </div>
+
+        {/* Collapsible Content */}
+        <AnimatePresence>
+          {showAdvanced && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25, ease: "easeInOut" }}
+              className="overflow-hidden space-y-6"
+            >
+              {/* Disclaimer Alert */}
+              <div className="p-4 bg-red-500/5 border border-red-500/10 rounded-2xl flex gap-3 text-left">
+                <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-bold text-red-300">Disclaimer & Caution</h4>
+                  <p className="text-zinc-400 text-xs font-normal leading-relaxed mt-0.5">
+                    Modifying advanced hybrid retrieval weights or text ingestion chunk parameters will directly impact vector database search precision, chunk alignment, and RAG answer confidence. Modify only if you understand the underlying indexing strategy.
+                  </p>
+                </div>
+              </div>
+
+              {/* Retrieval Parameters */}
+              <div className="glass-card rounded-2xl p-5 space-y-4">
+                <div className="flex items-center gap-2 border-b border-white/[0.03] pb-3 mb-1">
+                  <Sliders className="w-4 h-4 text-[#45A29E]" />
+                  <h3 className="text-sm font-semibold text-white">Hybrid Retrieval Weights (RRF)</h3>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {/* Dense search slider */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs font-medium text-zinc-350">
+                      <span>Dense Search Weight (Qdrant)</span>
+                      <span className="font-mono text-[#45A29E] font-bold">{denseWeight}</span>
+                    </div>
+                    <input 
+                      type="range"
+                      min="0.0"
+                      max="1.0"
+                      step="0.05"
+                      value={denseWeight}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setDenseWeight(val);
+                        setSparseWeight(parseFloat((1 - val).toFixed(2)));
+                      }}
+                      className="w-full h-1.5 bg-zinc-950 rounded-lg appearance-none cursor-pointer accent-[#45A29E]"
+                    />
+                    <span className="text-xs text-zinc-400 font-normal block leading-relaxed">
+                      Prioritizes conceptual/semantic matches over raw wording.
+                    </span>
+                  </div>
+
+                  {/* Sparse search slider */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs font-medium text-zinc-350">
+                      <span>Sparse Search Weight (BM25)</span>
+                      <span className="font-mono text-[#45A29E] font-bold">{sparseWeight}</span>
+                    </div>
+                    <input 
+                      type="range"
+                      min="0.0"
+                      max="1.0"
+                      step="0.05"
+                      value={sparseWeight}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setSparseWeight(val);
+                        setDenseWeight(parseFloat((1 - val).toFixed(2)));
+                      }}
+                      className="w-full h-1.5 bg-zinc-950 rounded-lg appearance-none cursor-pointer accent-[#45A29E]"
+                    />
+                    <span className="text-xs text-zinc-400 font-normal block leading-relaxed">
+                      Prioritizes exact keyword matches, code symbols, and numbers.
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Ingestion & Chunking parameters */}
+              <div className="glass-card rounded-2xl p-5 space-y-4">
+                <div className="flex items-center gap-2 border-b border-white/[0.03] pb-3 mb-1">
+                  <Layers className="w-4 h-4 text-[#45A29E]" />
+                  <h3 className="text-sm font-semibold text-white">Ingestion Chunking Strategy</h3>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {/* Chunk size input */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-zinc-350 block">Chunk Token Size (Characters)</label>
+                    <input 
+                      type="number"
+                      value={chunkSize}
+                      onChange={(e) => setChunkSize(parseInt(e.target.value) || 0)}
+                      className="bg-zinc-950 text-xs px-4 py-3 rounded-xl border border-white/[0.04] w-full text-zinc-200 focus:outline-none focus:border-[#45A29E]/30 font-semibold font-mono"
+                    />
+                    <span className="text-xs text-zinc-400 font-normal block">
+                      Target length for dividing document paragraphs. Recommended: 500 characters.
+                    </span>
+                  </div>
+
+                  {/* Chunk overlap input */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-zinc-350 block">Chunk Overlap (Characters)</label>
+                    <input 
+                      type="number"
+                      value={chunkOverlap}
+                      onChange={(e) => setChunkOverlap(parseInt(e.target.value) || 0)}
+                      className="bg-zinc-950 text-xs px-4 py-3 rounded-xl border border-white/[0.04] w-full text-zinc-200 focus:outline-none focus:border-[#45A29E]/30 font-semibold font-mono"
+                    />
+                    <span className="text-xs text-zinc-400 font-normal block">
+                      Preserves textual boundary context between adjacent chunks. Recommended: 10%.
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Action submit button */}
         <div className="flex justify-end gap-3">
