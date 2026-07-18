@@ -116,14 +116,31 @@ export default function ChatSandbox() {
         backendUrl: process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000/api/v1", 
         apiKey: "my_super_secret_cited_ai_key_2026",
         modelType: "high",
-        temperature: 0.0
+        temperature: 0.0,
+        denseWeight: 0.5,
+        sparseWeight: 0.5,
+        chunkSize: 500,
+        chunkOverlap: 50
       };
     }
     const url = localStorage.getItem("cited_backend_url") || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000/api/v1";
     const key = localStorage.getItem("cited_api_key") || "my_super_secret_cited_ai_key_2026";
     const model = localStorage.getItem("cited_model_type") || "high";
     const temp = parseFloat(localStorage.getItem("cited_temperature") || "0.0");
-    return { backendUrl: url, apiKey: key, modelType: model, temperature: temp };
+    const dense = parseFloat(localStorage.getItem("cited_dense_weight") || "0.5");
+    const sparse = parseFloat(localStorage.getItem("cited_sparse_weight") || "0.5");
+    const size = parseInt(localStorage.getItem("cited_chunk_size") || "500");
+    const overlap = parseInt(localStorage.getItem("cited_chunk_overlap") || "50");
+    return { 
+      backendUrl: url, 
+      apiKey: key, 
+      modelType: model, 
+      temperature: temp,
+      denseWeight: dense,
+      sparseWeight: sparse,
+      chunkSize: size,
+      chunkOverlap: overlap
+    };
   };
 
   // Chat scroll anchor
@@ -151,7 +168,7 @@ export default function ChatSandbox() {
         return;
       }
 
-      const { backendUrl, apiKey } = getSettings();
+      const { backendUrl, apiKey, chunkSize, chunkOverlap } = getSettings();
       setUploadFileName(file.name);
       setUploadProgress(10);
       setIsGenerating(true);
@@ -165,7 +182,7 @@ export default function ChatSandbox() {
 
       try {
         // 1. Submit POST request to upload endpoint
-        const res = await fetch(`${backendUrl}/ingest/upload`, {
+        const res = await fetch(`${backendUrl}/ingest/upload?chunk_size=${chunkSize}&chunk_overlap=${chunkOverlap}`, {
           method: "POST",
           headers: {
             "X-API-Key": apiKey
@@ -289,7 +306,7 @@ export default function ChatSandbox() {
       }
     ]);
 
-    const { backendUrl, apiKey, modelType, temperature } = getSettings();
+    const { backendUrl, apiKey, modelType, temperature, denseWeight, sparseWeight } = getSettings();
     const startTime = Date.now();
     let aiText = "";
 
@@ -305,7 +322,9 @@ export default function ChatSandbox() {
           query: userMsg.text,
           model_type: modelType,
           temperature: temperature,
-          stream: true
+          stream: true,
+          dense_weight: denseWeight,
+          sparse_weight: sparseWeight
         }),
         signal: controller.signal
       });

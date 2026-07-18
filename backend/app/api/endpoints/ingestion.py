@@ -27,7 +27,7 @@ _MIME_FOR_FORMAT = {
 }
 
 
-def sync_run_ingestion(job_id: str, document_id: str, filename: str, file_bytes: bytes, jobs_db: dict):
+def sync_run_ingestion(job_id: str, document_id: str, filename: str, file_bytes: bytes, jobs_db: dict, chunk_size: int = 500, chunk_overlap: int = 50):
     """
     Ingestion worker: format detection, parsing (PDF/DOCX), text chunking,
     embedding generation via Hugging Face, and batch vector uploads into Qdrant Cloud.
@@ -47,7 +47,7 @@ def sync_run_ingestion(job_id: str, document_id: str, filename: str, file_bytes:
         jobs_db[job_id]["progress"] = 40
 
         # Step 2: Document Chunking
-        chunks = DocumentChunker.chunk_document(parsed_pages, document_id, filename)
+        chunks = DocumentChunker.chunk_document(parsed_pages, document_id, filename, chunk_size, chunk_overlap)
         jobs_db[job_id]["chunks"] = len(chunks)
         jobs_db[job_id]["progress"] = 55
 
@@ -95,7 +95,9 @@ def sync_run_ingestion(job_id: str, document_id: str, filename: str, file_bytes:
 async def upload_document(
     request: Request,
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    chunk_size: int | None = None,
+    chunk_overlap: int | None = None
 ):
     """
     Validates the uploaded file (PDF or DOCX), saves it to Supabase Storage,
@@ -151,7 +153,9 @@ async def upload_document(
             document_id,
             safe_filename,
             file_bytes,
-            request.app.state.ingestion_jobs
+            request.app.state.ingestion_jobs,
+            chunk_size or 500,
+            chunk_overlap or 50
         )
 
         return UploadResponse(

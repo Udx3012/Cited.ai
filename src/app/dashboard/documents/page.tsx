@@ -88,12 +88,16 @@ export default function DocumentsLibrary() {
     if (typeof window === "undefined") {
       return { 
         backendUrl: process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000/api/v1", 
-        apiKey: "my_super_secret_cited_ai_key_2026" 
+        apiKey: "my_super_secret_cited_ai_key_2026",
+        chunkSize: 500,
+        chunkOverlap: 50
       };
     }
     const url = localStorage.getItem("cited_backend_url") || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000/api/v1";
     const key = localStorage.getItem("cited_api_key") || "my_super_secret_cited_ai_key_2026";
-    return { backendUrl: url, apiKey: key };
+    const size = parseInt(localStorage.getItem("cited_chunk_size") || "500");
+    const overlap = parseInt(localStorage.getItem("cited_chunk_overlap") || "50");
+    return { backendUrl: url, apiKey: key, chunkSize: size, chunkOverlap: overlap };
   };
 
   // Sync documents from localStorage
@@ -129,13 +133,13 @@ export default function DocumentsLibrary() {
 
   // Launch a live upload task targeting the FastAPI backend
   const startLiveUpload = async (queueId: string, file: File, fileSize: string) => {
-    const { backendUrl, apiKey } = getSettings();
+    const { backendUrl, apiKey, chunkSize, chunkOverlap } = getSettings();
     const formData = new FormData();
     formData.append("file", file);
 
     try {
       // 1. Submit POST request to upload endpoint
-      const res = await fetch(`${backendUrl}/ingest/upload`, {
+      const res = await fetch(`${backendUrl}/ingest/upload?chunk_size=${chunkSize}&chunk_overlap=${chunkOverlap}`, {
         method: "POST",
         headers: {
           "X-API-Key": apiKey

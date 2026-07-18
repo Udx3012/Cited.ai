@@ -309,12 +309,14 @@ async def chat_completions(payload: ChatRequest):
             except Exception as e:
                 logger.error(f"Dense vector search failed: {str(e)}")
 
-        # --- Step 3: Reciprocal Rank Fusion (RRF) ---
+        # --- Step 3: Hybrid Score Fusion ---
         fused_chunks = ReciprocalRankFusion.fuse_results(
             dense_results=dense_results,
             sparse_results=sparse_results,
             k=60,
-            limit=15
+            limit=15,
+            dense_weight=payload.dense_weight if payload.dense_weight is not None else 0.5,
+            sparse_weight=payload.sparse_weight if payload.sparse_weight is not None else 0.5
         )
 
         # --- Step 4: Cross-Encoder Reranking ---

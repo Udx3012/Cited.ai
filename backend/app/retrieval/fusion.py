@@ -9,13 +9,15 @@ class ReciprocalRankFusion:
         dense_results: List[Dict[str, Any]],
         sparse_results: List[Dict[str, Any]],
         k: int = 60,
-        limit: int = 5
+        limit: int = 5,
+        dense_weight: float = 0.5,
+        sparse_weight: float = 0.5
     ) -> List[Dict[str, Any]]:
         """
         Combines dense vector candidates and sparse keyword candidates 
         into a single ranked sequence using Reciprocal Rank Fusion (RRF).
         """
-        logger.info(f"Running Reciprocal Rank Fusion (RRF) on dense={len(dense_results)} and sparse={len(sparse_results)} results (k={k}, limit={limit})")
+        logger.info(f"Running Reciprocal Rank Fusion (RRF) on dense={len(dense_results)} and sparse={len(sparse_results)} results (k={k}, limit={limit}, dense_w={dense_weight}, sparse_w={sparse_weight})")
         
         rrf_scores = {}  # Maps chunk UUID -> RRF score
         chunk_map = {}   # Maps chunk UUID -> Chunk structure
@@ -26,7 +28,7 @@ class ReciprocalRankFusion:
             chunk_map[chunk_id] = chunk
             
             rank = idx + 1
-            rrf_scores[chunk_id] = 1.0 / (k + rank)
+            rrf_scores[chunk_id] = dense_weight * (1.0 / (k + rank))
             
         # 2. Score sparse candidates
         for idx, chunk in enumerate(sparse_results):
@@ -39,7 +41,7 @@ class ReciprocalRankFusion:
                 
             rank = idx + 1
             current_score = rrf_scores.get(chunk_id, 0.0)
-            rrf_scores[chunk_id] = current_score + (1.0 / (k + rank))
+            rrf_scores[chunk_id] = current_score + (sparse_weight * (1.0 / (k + rank)))
             
         # 3. Sort candidates descending by RRF score
         sorted_chunk_ids = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)

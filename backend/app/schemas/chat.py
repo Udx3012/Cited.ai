@@ -7,6 +7,8 @@ class ChatRequest(BaseModel):
     model_type: Optional[str] = Field("high", description="The LLM model complexity tier ('standard' or 'high')")
     temperature: Optional[float] = Field(0.0, ge=0.0, le=1.0, description="Model generation temperature")
     stream: Optional[bool] = Field(False, description="Toggles Server-Sent Events (SSE) token streaming")
+    dense_weight: Optional[float] = Field(0.5, ge=0.0, le=1.0, description="Weight for dense vector search (Qdrant)")
+    sparse_weight: Optional[float] = Field(0.5, ge=0.0, le=1.0, description="Weight for sparse lexical search (BM25)")
 
 class CitationMeta(BaseModel):
     id: int  # Citation marker index e.g., 1 for [1]
