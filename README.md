@@ -1,151 +1,102 @@
-# Cited.ai - Document-Grounded Q&A System
+# Cited.AI — Technical Grounded Q&A Platform (RAG)
 
-Cited.ai is a domain-agnostic, document-grounded Question-Answering system (Retrieval-Augmented Generation) designed to run entirely on free-tier cloud services. It processes uploaded documents (PDFs), indexes them into a vector store using hybrid dense-sparse search, and answers questions strictly based on the content of the documents with inline citations back to the source chunks.
-
----
-
-## 🏗️ System Architecture
-
-```
-[ Frontend (Next.js on Vercel) ] 
-       │
-       ▼ (Secured via X-API-Key Header)
-[ Backend (FastAPI on Render) ]
-       ├─► [ In-Memory BM25 Sparse Index ]
-       ├─► [ Hugging Face Serverless API ] (Embeddings & Reranking)
-       ├─► [ Qdrant Cloud ] (Dense Vector Store & Payload Cache)
-       ├─► [ Supabase Storage ] (Original PDF Hosting)
-       └─► [ Groq API ] (Llama 3.3 70B / 3.1 8B Synthesis & LLM-as-Judge Verification)
-```
+Cited.AI is a secure, high-performance Retrieval-Augmented Generation (RAG) system engineered for zero-hallucination document search and grounded question-answering. The system processes uploaded PDF and DOCX files, performs hybrid retrieval, and yields conversational responses with verifiable page-level citation boundaries.
 
 ---
 
-## 🛠️ Service Setup & Credentials
+## 🏗️ Technical Architecture & Stack
 
-Cited.ai is built to cost **$0** to run by leveraging the following free-tier APIs. Setup accounts for each service and obtain the keys:
+```
+[ Client: Next.js + Lenis Smooth Scroll + GSAP Animations ]
+                       │
+                       ▼ (HTTP POST /completions - API Key Auth)
+[ Server: FastAPI Web Service ]
+  ├── [ Storage ] ──► Supabase Object Storage (Persistent PDFs/DOCXs)
+  ├── [ BM25 Engine ] ──► In-Memory Sparse Indexing
+  ├── [ Vector Search ] ──► Qdrant Cloud (1024-Dim Cosine Distance Vectors)
+  │
+  ▼ [ Grounding & Synthesis Pipeline ]
+  ├── Tier 1 (Primary): Voyage AI (voyage-3 embeddings) & Gemini API (gemini-2.5-flash LLM)
+  └── Tier 2 (Failover): Hugging Face (BAAI/bge-large-en-v1.5 embeddings) & Groq Cloud (llama-3.3-70b-versatile LLM)
+```
 
-1. **Qdrant Cloud (Vector DB)**:
-   - Create a free tier cluster on [Qdrant Cloud](https://cloud.qdrant.io/).
-   - Obtain your **Cluster URL** and **API Key**.
-2. **Groq Cloud (LLM Engine)**:
-   - Create a free account at [Groq Console](https://console.groq.com/).
-   - Generate an **API Key** (e.g., `gsk_...`).
-3. **Hugging Face (Embeddings & Reranker)**:
-   - Sign up/log in to [Hugging Face](https://huggingface.co/).
-   - Create a **Read Access Token** at Settings -> Access Tokens (e.g., `hf_...`).
-4. **Supabase (Object Storage)**:
-   - Create a free project at [Supabase](https://supabase.com/).
-   - Go to Storage and create a public bucket named `documents` (or your custom name).
-   - Retrieve your **Supabase URL** and **Anon/Service Role Key**.
+### 1. Hybrid Search & Rank Fusion
+- **Dense Retrieval**: Context chunks are embedded into a 1024-dimensional vector space. Queries are matched using Cosine Similarity in Qdrant Cloud.
+- **Sparse Retrieval**: Uses an Okapi BM25 keyword matching engine.
+- **Reciprocal Rank Fusion (RRF)**: Merges dense and sparse candidates into a single ranked list using the standard formula:
+  $$RRF\_Score(d) = \sum_{m \in M} \frac{1}{k + r_m(d)}$$
+  (where $k = 60$).
+
+### 2. Neural Reranking
+- The top fused candidates are scored using a Cross-Encoder Reranking model (`BAAI/bge-reranker-base`) via Hugging Face inference. The top 5 highest-relevance context chunks are selected to build the generation prompt.
+
+### 3. Failover Generation Logic
+- **Primary Generator**: Generates answers via **Gemini 2.5 Flash** using a custom prompt instructing the model to output answers along with structured citation indices (e.g. `[1]`, `[2]`) and structured JSON metadata.
+- **Failover Dispatcher**: If the primary Voyage AI or Gemini APIs fail (due to rate-limiting, quota exhaustion, or networking issues), the dispatcher automatically routes requests to **Groq (Llama-3.3-70b-versatile)** and **Hugging Face (`bge-large-en-v1.5`)** without interrupting the user session.
+
+### 4. Authentication & Security
+- **Supabase Auth**: Implements JWT-based user authentication (standard logins and Google OAuth) with session persistence.
+- **API Guardrails**: Frontend-backend communication is protected via `X-API-Key` headers. Input guardrails detect and neutralize prompt injection attempts.
+
+---
+
+## 🛠️ Environment Variables Configuration
+
+### 1. Backend (FastAPI on Render / Server)
+Configure these variables in your backend environment:
+
+```env
+APP_NAME=Cited.AI Backend
+APP_ENV=production
+DEBUG=false
+BACKEND_API_KEY=your_secure_backend_api_key
+ALLOWED_ORIGINS=https://your-frontend.vercel.app
+
+# Qdrant Vector DB
+QDRANT_URL=https://your-qdrant-cluster.qdrant.io
+QDRANT_API_KEY=your_qdrant_api_key
+
+# Supabase Storage (Bypasses RLS using Service Role Key)
+SUPABASE_URL=https://your-supabase-project.supabase.co
+SUPABASE_KEY=your_supabase_service_role_key
+SUPABASE_BUCKET_NAME=documents
+
+# Primary Tier Models (Voyage & Gemini)
+GEMINI_API_KEY=your_gemini_api_key
+VOYAGE_API_KEY=your_voyage_api_key
+
+# Backup Tier Models (Groq & Hugging Face)
+GROQ_API_KEY=your_groq_api_key
+HF_API_KEY=your_hugging_face_read_token
+```
+
+### 2. Frontend (Next.js on Vercel / Client)
+Configure these variables in your frontend environment:
+
+```env
+NEXT_PUBLIC_BACKEND_URL=https://your-backend.onrender.com/api/v1
+NEXT_PUBLIC_SUPABASE_URL=https://your-supabase-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_public_anon_key
+```
 
 ---
 
 ## 🚀 Local Quickstart
 
-### 1. Backend Setup
-
+### Backend Setup
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .\.venv\Scripts\activate
+source .venv/bin/activate  # Windows: .\.venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-Create a `.env` file in the `backend/` directory:
-
-```env
-APP_NAME=Cited.AI Backend
-APP_ENV=development
-DEBUG=true
-
-# Security key required for frontend authorization
-BACKEND_API_KEY=ca_live_dev_test_key
-
-# CORS settings
-ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-
-# Service integrations
-QDRANT_URL=https://your-qdrant-cluster-url.qdrant.io
-QDRANT_API_KEY=your-qdrant-api-key
-GROQ_API_KEY=your-groq-api-key
-HF_API_KEY=your-hugging-face-token
-SUPABASE_URL=https://your-supabase-project.supabase.co
-SUPABASE_KEY=your-supabase-key
-SUPABASE_BUCKET_NAME=documents
-```
-
-Run the backend server:
-```bash
 python -m uvicorn app.main:app --reload --port 8000
 ```
-Open `http://localhost:8000/docs` to view the FastAPI OpenAPI interactive documentation.
+Interactive docs are served at `http://localhost:8000/docs`.
 
-### 2. Frontend Setup
-
+### Frontend Setup
 ```bash
 cd ..
 npm install
-```
-
-Create a `.env.local` file in the root directory:
-
-```env
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000/api/v1
-```
-
-Run the development server:
-```bash
 npm run dev
 ```
 Open `http://localhost:3000` to interact with the application.
-
----
-
-## ☁️ Cloud Deployment Guide
-
-### 1. Backend Deployment to Render (Docker Web Service)
-
-Render automatically builds your backend using the provided `Dockerfile`.
-
-1. Push your repository to GitHub.
-2. Log in to [Render](https://render.com/) and click **New -> Web Service**.
-3. Select your GitHub repository.
-4. Configure the service settings:
-   - **Name**: `cited-ai-backend`
-   - **Environment**: `Docker`
-   - **Branch**: `master` (or your main branch)
-   - **Plan**: `Free`
-5. Go to **Environment** tab and add the environment variables:
-   - `QDRANT_URL`
-   - `QDRANT_API_KEY`
-   - `GROQ_API_KEY`
-   - `HF_API_KEY`
-   - `SUPABASE_URL`
-   - `SUPABASE_KEY`
-   - `SUPABASE_BUCKET_NAME`
-   - `BACKEND_API_KEY` (Generate a secure random string)
-   - `ALLOWED_ORIGINS` (Set this to your Vercel frontend URL, e.g., `https://your-app.vercel.app`)
-   - `APP_ENV` = `production`
-   - `DEBUG` = `false`
-6. Click **Deploy Web Service**. Render will build and expose the service at `https://cited-ai-backend.onrender.com`.
-
-*Note: Render free services spin down after 15 minutes of inactivity. The first request after sleep will take 30-60 seconds to spin back up.*
-
-### 2. Frontend Deployment to Vercel
-
-1. Log in to [Vercel](https://vercel.com/) and click **Add New -> Project**.
-2. Select your GitHub repository.
-3. Keep default build settings (Next.js project).
-4. Add the following environment variable:
-   - `NEXT_PUBLIC_BACKEND_URL`: Set to the Render backend URL (e.g., `https://cited-ai-backend.onrender.com/api/v1`).
-5. Click **Deploy**. Vercel will build and provision your live frontend application.
-
----
-
-## 🧪 Verification Checklist
-
-Once deployed, verify the complete end-to-end flow:
-1. **Security**: Try hitting the `/api/v1/...` routes without the `X-API-Key` header set to your `BACKEND_API_KEY` to confirm requests are blocked.
-2. **Ingestion**: Upload a PDF in the **Documents** page. Check that it parses, uploads to Supabase, generates vector chunks, and indexes them in Qdrant Cloud.
-3. **Retrieval & Ask**: Submit a query in the **Chat** interface. Verify the answer is generated with clickable bracketed citations linking back to the exact PDF page.
-4. **Guardrails**: Ask an unrelated question (e.g., "Explain quantum computing") and confirm the system refuses to answer from world knowledge, displaying *"Insufficient information found in the uploaded documents."*

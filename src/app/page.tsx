@@ -213,44 +213,44 @@ export default function Home() {
     {
       num: "01",
       title: "Ingest",
-      desc: "PDF • DOCX • MD • HTML",
-      detail: "Supports files up to 50MB. Auto-extracts document properties, file hashes, and structure. Raw uploads are kept in object storage to avoid re-upload requirements."
+      desc: "PDF • DOCX",
+      detail: "Upload documents up to 50MB. The system automatically secures and indexes file structure and contents in persistent object storage, so they are ready to search."
     },
     {
       num: "02",
       title: "Parse & OCR",
-      desc: "Layout-aware extraction",
-      detail: "Executes native text extraction first. Falls back to pytesseract OCR if the page has low character counts. Scans all pages to extract and OCR embedded figures and diagrams."
+      desc: "Layout-aware text extraction",
+      detail: "Extracts document layout, hierarchy, and text naturally. Automatically applies OCR engines to read scanned pages, figures, and charts, ensuring no data is missed."
     },
     {
       num: "03",
       title: "Chunk",
-      desc: "Semantic + overlap windows",
-      detail: "Avoids arbitrary token limits. Splits logically on section headings, clause numbers, and bullet boundaries. Stitches split tables that cross page boundaries."
+      desc: "Semantic context grouping",
+      detail: "Intelligently groups text based on paragraph boundaries, sections, and tables rather than arbitrary word counts, preserving context flow for the search engine."
     },
     {
       num: "04",
       title: "Embed",
-      desc: "1536-dim dense vectors",
-      detail: "Generates vector embeddings using the locally running AI models. Indexes results inside Qdrant Cloud alongside the full text payload."
+      desc: "1024-dim search vectors",
+      detail: "Converts document sections into high-density semantic search vectors using optimized embedding APIs. Features automatic failover configurations to guarantee service uptime."
     },
     {
       num: "05",
       title: "Hybrid Search",
-      desc: "Dense + BM25 + RRF",
-      detail: "Combines dense cosine similarity lookup in Qdrant with in-memory BM25 sparse index scoring. Merges rankings using Reciprocal Rank Fusion (default 0.7 / 0.3)."
+      desc: "Dense Proximity + Exact Match",
+      detail: "Combines semantic search vectors with keyword-based sparse matching. Merges results using rank reciprocity to find matching context with maximum relevance."
     },
     {
       num: "06",
       title: "Rerank",
-      desc: "Cross-encoder",
-      detail: "Scores the top 20 candidates through the local AI reranker, weeding out semantic outliers to pass the top 5 highly relevant chunks."
+      desc: "Neural Reranking Stage",
+      detail: "Re-evaluates search candidates through a secondary neural reranker, sorting out irrelevant blocks and leaving only the most contextually relevant chunks."
     },
     {
       num: "07",
       title: "Ground & Cite",
-      desc: "Verified attribution",
-      detail: "Answers strictly within context limits using AI. A secondary AI judge inspects each claim-citation pair to ensure zero hallucinations."
+      desc: "Verified Answer Generation",
+      detail: "Synthesizes answers strictly using retrieved context. A secondary validation layer cross-audits every claim against source chunks to guarantee zero hallucinations and provide clickable page numbers."
     }
   ];
 
