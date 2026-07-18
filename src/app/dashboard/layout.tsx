@@ -136,7 +136,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const breadcrumbs = getBreadcrumbs();
 
   return (
-    <div className="flex h-screen bg-[#030303] text-zinc-100 overflow-hidden font-sans">
+    <div className="flex h-screen bg-[#030303] text-zinc-100 overflow-hidden font-sans relative">
       
       {/* Background ambient lighting */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-[#45A29E]/[0.01] rounded-full blur-[100px] pointer-events-none" />
