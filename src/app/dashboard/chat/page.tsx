@@ -33,6 +33,7 @@ export default function ChatSandbox() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputVal, setInputVal] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -137,13 +138,7 @@ export default function ChatSandbox() {
 
   // Clear chat history handler
   const handleClearChat = () => {
-    if (window.confirm("Are you sure you want to clear the chat history?")) {
-      initializeDefaultMessage();
-      setCitationMap({});
-      setSelectedCitationId(null);
-      localStorage.removeItem("cited_chat_messages");
-      localStorage.removeItem("cited_chat_citations");
-    }
+    setShowClearConfirm(true);
   };
 
   // Handle in-chat file upload via live backend API
@@ -470,7 +465,7 @@ export default function ChatSandbox() {
                   }`}
                 >
                   {/* Text parser for citation numbers [1] etc. to make them interactive buttons */}
-                  <p>
+                  <p className="whitespace-pre-wrap">
                     {isAi 
                       ? m.text.split(/(\[\d+\])/g).map((chunk, i) => {
                           const match = chunk.match(/\[(\d+)\]/);
@@ -665,6 +660,46 @@ export default function ChatSandbox() {
               </div>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Clear Chat Confirmation Modal */}
+      <AnimatePresence>
+        {showClearConfirm && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-sm bg-[#08080a] border border-white/[0.08] rounded-2xl p-6 shadow-2xl relative overflow-hidden"
+            >
+              <h3 className="text-sm font-serif text-white tracking-wide mb-2">Clear Chat History?</h3>
+              <p className="text-zinc-400 text-xs font-normal mb-6 leading-relaxed">
+                This will permanently delete all conversational messages and citations from your local session.
+              </p>
+              <div className="flex items-center justify-end gap-3 font-sans">
+                <button
+                  onClick={() => setShowClearConfirm(false)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-zinc-950 border border-white/[0.04] text-zinc-300 hover:text-white cursor-pointer transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    initializeDefaultMessage();
+                    setCitationMap({});
+                    setSelectedCitationId(null);
+                    localStorage.removeItem("cited_chat_messages");
+                    localStorage.removeItem("cited_chat_citations");
+                    setShowClearConfirm(false);
+                  }}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-red-500 hover:bg-red-600 text-white cursor-pointer transition-all shadow-[0_4px_12px_rgba(239,68,68,0.2)]"
+                >
+                  Clear History
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

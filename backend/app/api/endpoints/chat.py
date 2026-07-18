@@ -131,6 +131,13 @@ async def chat_completions(payload: ChatRequest):
             )
 
     try:
+        import re
+        doc_query_pattern = re.compile(
+            r"\b(which|what|list|show|name|available|any|all|active)\b.{0,25}\b(doc|document|pdf|file|paper|resume|upload)\b",
+            re.IGNORECASE
+        )
+        is_asking_about_docs = bool(doc_query_pattern.search(payload.query))
+
         # --- Early Exit: General Chat / Greetings ---
         # Skip the entire retrieval pipeline for greetings, chit-chat, and identity queries.
         # These do NOT need embeddings, Qdrant search, BM25, or reranking.
@@ -291,9 +298,37 @@ async def chat_completions(payload: ChatRequest):
 
         context_chunks = reranked_chunks[:5]
 
+        # Intercept queries asking about what documents are uploaded/active
+        uploaded_docs = []
+        if is_asking_about_docs:
+            uploaded_docs = sorted(list(set(
+                c["metadata"]["document_name"] 
+                for c in bm25_service.chunks 
+                if c.get("metadata", {}).get("document_name")
+            )))
+            if uploaded_docs:
+                docs_str = ", ".join(uploaded_docs)
+                context_chunks = [{
+                    "id": "virtual-docs-info",
+                    "document_name": "System Metadata",
+                    "page_number": 1,
+                    "chunk_index": 0,
+                    "text": f"The currently uploaded and active documents in the workspace are: {docs_str}.",
+                    "vector_score": 1.0,
+                    "bm25_score": 1.0,
+                    "metadata": {
+                        "document_name": "System Metadata",
+                        "page": 1,
+                        "heading": "Active Documents",
+                        "is_ocr": False
+                    }
+                }] + context_chunks[:4]
+
         # AI Guardrail: Confidence-based response filtering
         insufficient_context = False
-        if not context_chunks:
+        if is_asking_about_docs and uploaded_docs:
+            insufficient_context = False
+        elif not context_chunks:
             insufficient_context = True
         else:
             max_vector_score = max(c.get("vector_score", 0.0) for c in context_chunks)
