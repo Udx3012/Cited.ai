@@ -7,16 +7,21 @@ import { motion, AnimatePresence } from "framer-motion";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Popover from "@radix-ui/react-popover";
+import { supabase } from "@/lib/supabase";
 import { 
   Layers, FileCode, MessageSquare, Compass, Shield, Settings,
   Menu, X, Bell, Search, User, LogOut, ChevronLeft, ChevronRight,
-  Sparkles, FileText, CheckCircle2, AlertCircle, HelpCircle, ArrowRight
+  Sparkles, FileText, CheckCircle2, AlertCircle, HelpCircle, ArrowRight, RefreshCw
 } from "lucide-react";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   
+  // Auth state protection
+  const [loadingUser, setLoadingUser] = useState(true);
+  const [user, setUser] = useState<any>(null);
+
   // Sidebar state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -24,6 +29,43 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // Command palette state
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.replace("/login");
+      } else {
+        setUser(session.user);
+        setLoadingUser(false);
+      }
+    };
+    checkUser();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        router.replace("/login");
+      } else {
+        setUser(session.user);
+        setLoadingUser(false);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
+  if (loadingUser) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-[#030303]">
+        <div className="flex flex-col items-center gap-3">
+          <RefreshCw className="w-8 h-8 text-[#45A29E] animate-spin" />
+          <span className="text-xs text-zinc-400 font-mono uppercase tracking-wider font-semibold">Verifying session...</span>
+        </div>
+      </div>
+    );
+  }
   
   // Keyboard shortcut listener for command palette (Ctrl+K or Cmd+K)
   useEffect(() => {
@@ -98,9 +140,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Sidebar Header */}
         <div className="h-16 px-4 flex items-center justify-between border-b border-white/[0.04]">
           <Link href="/" className="flex items-center gap-2 group overflow-hidden">
-            <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-white/[0.08] flex items-center justify-center shrink-0">
-              <span className="text-[#45A29E] font-bold text-base">C</span>
-            </div>
             {!sidebarCollapsed && (
               <motion.span 
                 initial={{ opacity: 0, x: -10 }}
@@ -164,9 +203,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               <div className="flex items-center justify-between pb-6 border-b border-white/[0.04] mb-4">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-white/[0.08] flex items-center justify-center">
-                    <span className="text-[#45A29E] font-bold text-base">C</span>
-                  </div>
                   <span className="text-white font-semibold text-base">Cited.AI</span>
                 </div>
                 <button onClick={() => setMobileSidebarOpen(false)} className="text-zinc-400 hover:text-white">
@@ -308,7 +344,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </DropdownMenu.Item>
                   <DropdownMenu.Separator className="h-px bg-white/[0.03] my-1" />
                   <DropdownMenu.Item 
-                    onClick={() => router.push("/")}
+                    onClick={async () => {
+                      await supabase.auth.signOut();
+                      router.push("/login");
+                    }}
                     className="flex items-center gap-2 px-2.5 py-2 text-xs text-red-400 font-medium hover:bg-red-500/10 rounded-lg cursor-pointer focus:outline-none focus:bg-red-500/10 transition-colors"
                   >
                     <LogOut className="w-3.5 h-3.5" />

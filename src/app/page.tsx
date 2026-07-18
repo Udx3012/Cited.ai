@@ -8,6 +8,25 @@ import {
   Cpu, Link2, FileCode, Layers, Play, Settings, RefreshCw, HelpCircle,
   FileCheck, AlertTriangle
 } from "lucide-react";
+import { useGSAPAnimations } from "@/hooks/useGSAPAnimations";
+
+// Helper: split text into individual character spans for GSAP targeting
+function SplitChars({ children, className = "" }: { children: string; className?: string }) {
+  return (
+    <>
+      {children.split("").map((char, i) => (
+        <span
+          key={i}
+          data-gsap-hero-char
+          className={className}
+          style={{ display: "inline-block", whiteSpace: char === " " ? "pre" : undefined }}
+        >
+          {char}
+        </span>
+      ))}
+    </>
+  );
+}
 
 // Animation presets
 const fadeInUp = {
@@ -31,9 +50,133 @@ export default function Home() {
   // Navigation states
   const [scrolled, setScrolled] = useState(false);
 
+  // Initialize all GSAP scroll-driven animations
+  useGSAPAnimations();
+
   // Dashboard mock states
   const [activeTab, setActiveTab] = useState("chat");
   const [activeCitation, setActiveCitation] = useState<number | null>(null);
+
+  // Sync state hooks
+  const [mockDocs, setMockDocs] = useState<any[]>([
+    { name: "Q4-Report.pdf", size: "124 KB", chunks: 145 },
+    { name: "GDPR-Handbook.pdf", size: "842 KB", chunks: 212 },
+    { name: "AI-Act-Brief.pdf", size: "98 KB", chunks: 55 }
+  ]);
+  const [totalChunks, setTotalChunks] = useState(412);
+  const [mockCitations, setMockCitations] = useState<any[]>([
+    { id: 1, name: "Q4-Report.pdf", page: "p. 34", score: 0.94, text: "The Q4-2025 report identifies three primary regulatory risk vectors affecting the fiscal outlook [1] including cross-border data-transfer restrictions..." },
+    { id: 2, name: "GDPR-Handbook.pdf", page: "p. 118", score: 0.89, text: "Evolving AI governance mandates require strict isolation..." },
+    { id: 3, name: "AI-Act-Brief.pdf", page: "p. 7", score: 0.81, text: "Attribution requirements for large language models..." }
+  ]);
+  const [chatConv, setChatConv] = useState({
+    userText: "What does the Q4 report say about regulatory risk?",
+    aiText: "The Q4-2025 report identifies three primary regulatory risk vectors affecting the fiscal outlook [1] including cross-border data-transfer restrictions [2] and evolving AI governance mandates.",
+    cites: [1, 2],
+    latency: "842 ms",
+    score: "94.6%"
+  });
+
+  // Sync data on mount
+  useEffect(() => {
+    // 1. Get documents
+    const savedDocs = localStorage.getItem("cited_documents");
+    if (savedDocs) {
+      try {
+        const parsed = JSON.parse(savedDocs);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMockDocs(parsed.map((d: any) => ({
+            name: d.name,
+            size: d.size,
+            chunks: d.chunks || 0
+          })));
+          const sum = parsed.reduce((acc: number, d: any) => acc + (d.chunks || 0), 0);
+          setTotalChunks(sum);
+        }
+      } catch (e) {
+        console.error("Mockup failed to parse saved documents:", e);
+      }
+    }
+
+    // 2. Get chat messages and citations
+    const savedMessages = localStorage.getItem("cited_chat_messages");
+    const savedCitesMap = localStorage.getItem("cited_chat_citations");
+    if (savedMessages) {
+      try {
+        const messages = JSON.parse(savedMessages);
+        if (Array.isArray(messages)) {
+          // Find the last user message and the next AI message
+          let lastUserIdx = -1;
+          for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i].sender === "user") {
+              lastUserIdx = i;
+              break;
+            }
+          }
+          if (lastUserIdx !== -1 && lastUserIdx + 1 < messages.length) {
+            const userMsg = messages[lastUserIdx];
+            const aiMsg = messages[lastUserIdx + 1];
+            if (aiMsg && aiMsg.sender === "ai") {
+              let citesList: any[] = [];
+              if (savedCitesMap) {
+                const citesMap = JSON.parse(savedCitesMap);
+                citesList = (aiMsg.citations || []).map((cId: any) => {
+                  const c = citesMap[cId];
+                  return c ? {
+                    id: c.id,
+                    name: c.source,
+                    page: `p. ${c.page}`,
+                    score: parseFloat(c.score || "0.9")
+                  } : null;
+                }).filter(Boolean);
+              }
+              
+              setChatConv({
+                userText: userMsg.text,
+                aiText: aiMsg.text,
+                cites: aiMsg.citations || [],
+                latency: aiMsg.latency || "842 ms",
+                score: aiMsg.score || "94.6%"
+              });
+
+              if (citesList.length > 0) {
+                setMockCitations(citesList);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Mockup failed to parse saved chat messages:", e);
+      }
+    }
+  }, []);
+
+  const renderTextWithCitations = (text: string) => {
+    const parts = text.split(/(\[\d+\])/g);
+    return (
+      <span className="text-xs text-zinc-300 leading-relaxed mb-1">
+        {parts.map((part, index) => {
+          const match = part.match(/^\[(\d+)\]$/);
+          if (match) {
+            const citId = parseInt(match[1], 10);
+            const isHighlighted = activeCitation === citId;
+            return (
+              <button
+                key={index}
+                onClick={() => setActiveCitation(isHighlighted ? null : citId)}
+                className={`inline-flex items-center justify-center w-5 h-5 mx-1 text-[10px] font-bold rounded ${
+                  isHighlighted ? "bg-[#45A29E] text-black" : "bg-zinc-800 text-[#45A29E] hover:bg-zinc-700"
+                } transition-all`}
+              >
+                {citId}
+              </button>
+            );
+          }
+          return part;
+        })}
+      </span>
+    );
+  };
 
   // Architecture interactive step state
   const [expandedStep, setExpandedStep] = useState<number | null>(1);
@@ -114,19 +257,23 @@ export default function Home() {
   return (
     <div className="relative min-h-screen bg-[#030303] text-zinc-200">
 
-      {/* Background Decorative Blur Gradients */}
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-[#45A29E]/[0.02] blur-[120px] pointer-events-none animate-glow-slow" />
-      <div className="absolute top-[30%] right-[-10%] w-[60%] h-[60%] rounded-full bg-blue-500/[0.01] blur-[150px] pointer-events-none" />
-      <div className="absolute bottom-[10%] left-[20%] w-[40%] h-[40%] rounded-full bg-amber-500/[0.01] blur-[130px] pointer-events-none" />
+      {/* Noise Texture Overlay — premium grain */}
+      <div className="noise-overlay" />
+
+      {/* Cursor Glow Follower — ambient interactivity */}
+      <div data-gsap-cursor-glow className="cursor-glow" />
+
+      {/* Background Decorative Blur Gradients — GSAP parallax targets */}
+      <div data-gsap-orb data-gsap-speed="-0.3" className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-[#45A29E]/[0.03] blur-[120px] pointer-events-none animate-glow-slow" />
+      <div data-gsap-orb data-gsap-speed="0.2" className="absolute top-[30%] right-[-10%] w-[60%] h-[60%] rounded-full bg-blue-500/[0.02] blur-[150px] pointer-events-none" />
+      <div data-gsap-orb data-gsap-speed="-0.15" className="absolute bottom-[10%] left-[20%] w-[40%] h-[40%] rounded-full bg-amber-500/[0.015] blur-[130px] pointer-events-none" />
+      <div data-gsap-orb data-gsap-speed="0.4" className="absolute top-[60%] right-[5%] w-[35%] h-[35%] rounded-full bg-[#45A29E]/[0.015] blur-[100px] pointer-events-none" />
+      <div data-gsap-orb data-gsap-speed="-0.25" className="absolute top-[10%] left-[40%] w-[25%] h-[25%] rounded-full bg-purple-500/[0.01] blur-[100px] pointer-events-none" />
 
       {/* Sticky Navigation Header */}
       <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 border-b border-white/[0.04] bg-[#030303]/60 backdrop-blur-md ${scrolled ? "py-4 shadow-[0_10px_30px_rgba(0,0,0,0.8)]" : "py-5"}`}>
         <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
           <a href="#" className="flex items-center gap-2 group">
-            <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-white/[0.08] flex items-center justify-center relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-tr from-[#45A29E]/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-              <span className="text-white font-bold text-base relative z-10">C</span>
-            </div>
             <span className="text-white font-semibold text-lg tracking-tight">Cited.AI</span>
           </a>
 
@@ -138,8 +285,8 @@ export default function Home() {
           </nav>
 
           <div className="flex items-center gap-6">
-            <a href="/dashboard" className="text-zinc-400 hover:text-white transition-colors text-sm font-medium">Sign in</a>
-            <a href="/dashboard" className="bg-white hover:bg-zinc-200 text-black px-4 py-2 rounded-full text-sm font-semibold transition-all shadow-[0_0_15px_rgba(255,255,255,0.1)] hover:scale-[1.02] active:scale-[0.98]">
+            <a href="/login" className="text-zinc-400 hover:text-white transition-colors text-sm font-medium">Sign in</a>
+            <a href="/login" className="bg-white hover:bg-zinc-200 text-black px-4 py-2 rounded-full text-sm font-semibold transition-all shadow-[0_0_15px_rgba(255,255,255,0.1)] hover:scale-[1.02] active:scale-[0.98]">
               Get started
             </a>
           </div>
@@ -148,81 +295,72 @@ export default function Home() {
 
       {/* Page 1: Hero Section */}
       <section className="relative pt-36 pb-12 flex flex-col items-center justify-center overflow-hidden">
+        {/* Hero Grid Pattern — depth backdrop */}
+        <div className="hero-grid absolute inset-0 pointer-events-none" />
+
         <div className="max-w-7xl mx-auto px-6 text-center flex flex-col items-center z-10">
 
-          {/* Badge */}
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900/[0.8] border border-white/[0.05] shadow-[0_0_15px_rgba(0,0,0,0.5)] mb-8"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-            <span className="text-zinc-400 text-xs tracking-wider uppercase font-semibold">v1 — Hybrid retrieval + cross-encoder reranker</span>
-          </motion.div>
 
           {/* Heading */}
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.1 }}
+          <h1
             className="text-5xl md:text-7xl font-serif text-white tracking-tight leading-[1.2] mb-6 max-w-4xl"
+            style={{ perspective: "800px" }}
           >
-            Let your documents <br />
-            <span className="italic text-[#45A29E] drop-shadow-[0_0_20px_rgba(197,168,128,0.3)]">answer</span> for you.
-          </motion.h1>
+            <SplitChars>Let your documents</SplitChars>
+            <br />
+            <span className="italic text-shimmer drop-shadow-[0_0_20px_rgba(69,162,158,0.3)]" data-gsap-hero-char>
+              answer
+            </span>
+            <SplitChars> for you.</SplitChars>
+          </h1>
 
           {/* Subtitle */}
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
+          <p
+            data-gsap-hero-sub
             className="text-zinc-400 text-base md:text-lg max-w-2xl leading-relaxed mb-10 font-sans font-normal"
+            style={{ opacity: 0 }}
           >
             Cited.AI is a grounded retrieval platform for teams that can&apos;t afford hallucinations.
             Upload once, ask anything — every answer arrives with page-level citations and a verifiable trail.
-          </motion.p>
+          </p>
 
           {/* Action CTAs */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.3 }}
+          <div
+            data-gsap-hero-ctas
             className="flex flex-col sm:flex-row items-center gap-4 mb-16"
+            style={{ opacity: 0 }}
           >
-            <a href="/dashboard" className="flex items-center gap-2 bg-[#45A29E] hover:bg-[#bda076] text-black px-6 py-3.5 rounded-full text-sm font-semibold transition-all hover:scale-[1.02] shadow-[0_4px_20px_rgba(197,168,128,0.25)]">
+            <a href="/login" className="flex items-center gap-2 bg-[#45A29E] hover:bg-[#3d9490] text-black px-6 py-3.5 rounded-full text-sm font-semibold transition-all hover:scale-[1.02] shadow-[0_4px_20px_rgba(69,162,158,0.25)] hover:shadow-[0_6px_30px_rgba(69,162,158,0.35)]">
               Start building <ArrowRight className="w-4 h-4" />
             </a>
             <a href="#how-it-works" className="flex items-center gap-2 bg-zinc-900/60 hover:bg-zinc-900 border border-white/[0.08] hover:border-[#45A29E]/30 text-white px-6 py-3.5 rounded-full text-sm font-semibold transition-all">
               See how it works
             </a>
-          </motion.div>
+          </div>
 
           {/* Quick specs / trust banner */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 1, delay: 0.5 }}
+          <div
             className="flex flex-wrap justify-center items-center gap-x-8 gap-y-3 text-[10px] md:text-xs font-semibold tracking-[0.2em] text-zinc-400 uppercase"
           >
-            <span>No credit card</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-zinc-800" />
-            <span>SOC 2 Type II</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-zinc-800" />
-            <span>GDPR Ready</span>
-          </motion.div>
+            <span data-gsap-trust-item style={{ opacity: 0 }}>No credit card</span>
+            <span data-gsap-trust-item style={{ opacity: 0 }} className="w-1.5 h-1.5 rounded-full bg-zinc-800" />
+            <span data-gsap-trust-item style={{ opacity: 0 }}>SOC 2 Type II</span>
+            <span data-gsap-trust-item style={{ opacity: 0 }} className="w-1.5 h-1.5 rounded-full bg-zinc-800" />
+            <span data-gsap-trust-item style={{ opacity: 0 }}>GDPR Ready</span>
+          </div>
         </div>
       </section>
 
       {/* Page 2: Platform Screenshot/Mockup */}
       <section className="py-12 relative flex justify-center">
-        <div className="max-w-7xl mx-auto px-6 w-full">
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-50px" }}
-            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full rounded-xl border border-white/[0.06] bg-[#08080a] shadow-[0_20px_60px_rgba(0,0,0,0.8),0_0_80px_rgba(197,168,128,0.02)] overflow-hidden"
+        <div className="max-w-7xl mx-auto px-6 w-full perspective-container">
+          {/* Floating shadow underneath mockup */}
+          <div data-gsap-mockup-shadow className="mockup-shadow w-[80%] h-16 mx-auto -mb-8 rounded-full" style={{ opacity: 0 }} />
+
+          <div
+            data-gsap-mockup
+            className="w-full rounded-xl border border-white/[0.06] bg-[#08080a] shadow-[0_20px_60px_rgba(0,0,0,0.8),0_0_80px_rgba(69,162,158,0.03)] overflow-hidden"
+            style={{ opacity: 0 }}
           >
             {/* Window Top Bar */}
             <div className="px-4 py-3 bg-[#0d0d11] border-b border-white/[0.05] flex items-center justify-between">
@@ -250,24 +388,28 @@ export default function Home() {
                   {/* Stats badge */}
                   <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900/60 border border-white/[0.03] mb-6">
                     <FileText className="w-4 h-4 text-[#45A29E]" />
-                    <span className="text-xs font-medium text-zinc-300">412 chunks embedded</span>
+                    <span className="text-xs font-medium text-zinc-300">{totalChunks} chunks embedded</span>
                   </div>
 
                   {/* Navigation Links */}
                   <div className="space-y-1">
                     {[
-                      { id: "dashboard", label: "Dashboard", icon: Layers },
+                      { id: "dashboard", label: "Overview", icon: Layers },
                       { id: "documents", label: "Documents", icon: FileCode },
-                      { id: "chat", label: "Chat", icon: MessageSquare },
-                      { id: "inspector", label: "Inspector", icon: Compass },
-                      { id: "evaluation", label: "Evaluation", icon: Shield }
+                      { id: "chat", label: "Chat Sandbox", icon: MessageSquare },
+                      { id: "inspector", label: "AI Inspector", icon: Compass },
+                      { id: "evaluation", label: "Evaluation", icon: Shield },
+                      { id: "settings", label: "Settings", icon: Settings }
                     ].map((tab) => {
                       const Icon = tab.icon;
                       const isActive = activeTab === tab.id;
                       return (
                         <button
                           key={tab.id}
-                          onClick={() => setActiveTab(tab.id)}
+                          onClick={() => {
+                            setActiveTab(tab.id);
+                            setActiveCitation(null);
+                          }}
                           className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${isActive
                             ? "bg-zinc-900 text-white shadow-inner border border-white/[0.03]"
                             : "text-zinc-400 hover:text-zinc-300 hover:bg-zinc-900/20"
@@ -285,9 +427,9 @@ export default function Home() {
                 <div className="mt-8 pt-4 border-t border-white/[0.03] flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-green-500" />
-                    <span className="text-[11px] text-zinc-400 font-semibold tracking-wider uppercase">Faithfulness</span>
+                    <span className="text-[11px] text-zinc-300 font-semibold tracking-wider uppercase">Faithfulness</span>
                   </div>
-                  <span className="text-xs font-bold text-green-400">94.6%</span>
+                  <span className="text-xs font-bold text-green-400">{chatConv.score}</span>
                 </div>
               </div>
 
@@ -308,41 +450,23 @@ export default function Home() {
                         >
                           {/* User Message */}
                           <div className="flex gap-4 items-start">
-                            <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-400 shrink-0">
+                            <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-300 shrink-0 font-sans">
                               U
                             </div>
                             <div className="bg-zinc-900/40 border border-white/[0.03] px-4 py-3 rounded-2xl rounded-tl-none max-w-xl">
-                              <p className="text-xs text-zinc-300 leading-relaxed">
-                                What does the Q4 report say about regulatory risk?
+                              <p className="text-xs text-zinc-300 leading-relaxed font-sans font-normal">
+                                {chatConv.userText}
                               </p>
                             </div>
                           </div>
 
                           {/* Assistant Message */}
                           <div className="flex gap-4 items-start">
-                            <div className="w-8 h-8 rounded-full bg-blue-950 border border-blue-900/50 flex items-center justify-center text-xs font-bold text-blue-400 shrink-0">
+                            <div className="w-8 h-8 rounded-full bg-blue-950 border border-blue-900/50 flex items-center justify-center text-xs font-bold text-blue-400 shrink-0 font-sans">
                               A
                             </div>
-                            <div className="bg-[#0b0c10] border border-blue-950/30 px-4 py-3 rounded-2xl rounded-tl-none max-w-xl shadow-[0_4px_30px_rgba(59,130,246,0.02)]">
-                              <p className="text-xs text-zinc-300 leading-relaxed mb-1">
-                                The Q4-2025 report identifies three primary regulatory risk vectors affecting the fiscal outlook
-                                <button
-                                  onClick={() => setActiveCitation(activeCitation === 1 ? null : 1)}
-                                  className={`inline-flex items-center justify-center w-5 h-5 mx-1 text-[10px] font-bold rounded ${activeCitation === 1 ? "bg-[#45A29E] text-black" : "bg-zinc-800 text-[#45A29E] hover:bg-zinc-700"
-                                    } transition-all`}
-                                >
-                                  1
-                                </button>
-                                including cross-border data-transfer restrictions
-                                <button
-                                  onClick={() => setActiveCitation(activeCitation === 2 ? null : 2)}
-                                  className={`inline-flex items-center justify-center w-5 h-5 mx-1 text-[10px] font-bold rounded ${activeCitation === 2 ? "bg-[#45A29E] text-black" : "bg-zinc-800 text-[#45A29E] hover:bg-zinc-700"
-                                    } transition-all`}
-                                >
-                                  2
-                                </button>
-                                and evolving AI governance mandates.
-                              </p>
+                            <div className="bg-[#0b0c10] border border-blue-950/30 px-4 py-3 rounded-2xl rounded-tl-none max-w-xl shadow-[0_4px_30px_rgba(59,130,246,0.02)] w-full">
+                              {renderTextWithCitations(chatConv.aiText)}
 
                               {/* Skeleton line representing continuing streaming text */}
                               <div className="h-1.5 w-3/4 bg-zinc-800/40 rounded-full mt-4" />
@@ -363,20 +487,20 @@ export default function Home() {
                           <h3 className="text-sm font-semibold text-white">System Metrics</h3>
                           <div className="grid grid-cols-2 gap-4">
                             <div className="bg-zinc-950 p-4 rounded-xl border border-white/[0.03]">
-                              <span className="text-[10px] text-zinc-400 block uppercase">Faithfulness</span>
-                              <span className="text-xl font-bold text-green-400 mt-1 block">94.6%</span>
+                              <span className="text-[10px] text-zinc-300 block font-medium uppercase">Faithfulness</span>
+                              <span className="text-xl font-bold text-green-400 mt-1 block">{chatConv.score}</span>
                             </div>
                             <div className="bg-zinc-950 p-4 rounded-xl border border-white/[0.03]">
-                              <span className="text-[10px] text-zinc-400 block uppercase">latency p95</span>
-                              <span className="text-xl font-bold text-white mt-1 block">842 ms</span>
+                              <span className="text-[10px] text-zinc-300 block font-medium uppercase">latency p95</span>
+                              <span className="text-xl font-bold text-white mt-1 block">{chatConv.latency}</span>
                             </div>
                             <div className="bg-zinc-950 p-4 rounded-xl border border-white/[0.03]">
-                              <span className="text-[10px] text-zinc-400 block uppercase">Retrieval Score</span>
-                              <span className="text-xl font-bold text-[#45A29E] mt-1 block">0.912</span>
+                              <span className="text-[10px] text-zinc-300 block font-medium uppercase">Chunks Embedded</span>
+                              <span className="text-xl font-bold text-[#45A29E] mt-1 block">{totalChunks}</span>
                             </div>
                             <div className="bg-zinc-950 p-4 rounded-xl border border-white/[0.03]">
-                              <span className="text-[10px] text-zinc-400 block uppercase">Hallucinations</span>
-                              <span className="text-xl font-bold text-zinc-400 mt-1 block">0.00%</span>
+                              <span className="text-[10px] text-zinc-300 block font-medium uppercase">Hallucinations</span>
+                              <span className="text-xl font-bold text-zinc-300 mt-1 block">0.00%</span>
                             </div>
                           </div>
                         </motion.div>
@@ -391,20 +515,16 @@ export default function Home() {
                           className="space-y-3"
                         >
                           <h3 className="text-sm font-semibold text-white">Active Corpora</h3>
-                          <div className="space-y-2">
-                            {[
-                              { name: "Q4-Report.pdf", size: "124 KB", chunks: 145 },
-                              { name: "GDPR-Handbook.pdf", size: "842 KB", chunks: 212 },
-                              { name: "AI-Act-Brief.pdf", size: "98 KB", chunks: 55 }
-                            ].map((doc, idx) => (
+                          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                            {mockDocs.map((doc, idx) => (
                               <div key={idx} className="bg-zinc-950/80 px-4 py-3 rounded-lg border border-white/[0.03] flex items-center justify-between">
                                 <div className="flex items-center gap-3">
-                                  <FileText className="w-4 h-4 text-zinc-400" />
+                                  <FileText className="w-4 h-4 text-zinc-300" />
                                   <span className="text-xs font-medium text-zinc-300">{doc.name}</span>
                                 </div>
                                 <div className="flex items-center gap-4">
-                                  <span className="text-[10px] text-zinc-400 font-mono">{doc.size}</span>
-                                  <span className="text-[10px] text-zinc-400 bg-zinc-900 border border-white/[0.04] px-2 py-0.5 rounded">{doc.chunks} chunks</span>
+                                  <span className="text-[10px] text-zinc-300 font-mono">{doc.size}</span>
+                                  <span className="text-[10px] text-zinc-300 bg-zinc-900 border border-white/[0.04] px-2 py-0.5 rounded">{doc.chunks} chunks</span>
                                 </div>
                               </div>
                             ))}
@@ -424,15 +544,15 @@ export default function Home() {
                           <div className="space-y-2 text-[11px] font-mono">
                             <div className="bg-zinc-950 p-3 rounded border border-white/[0.03]">
                               <span className="text-[#45A29E]">1. Dense Match (Qdrant)</span>
-                              <p className="text-zinc-400 mt-1">Returned 10 documents based on vector distance.</p>
+                              <p className="text-zinc-300 mt-1">Returned 10 documents based on vector distance.</p>
                             </div>
                             <div className="bg-zinc-950 p-3 rounded border border-white/[0.03]">
                               <span className="text-[#45A29E]">2. Sparse Match (BM25)</span>
-                              <p className="text-zinc-400 mt-1">Found exact matches for keys: &quot;regulatory risk&quot;.</p>
+                              <p className="text-zinc-300 mt-1">Found exact matches for query terms: &quot;{chatConv.userText.split(" ").slice(0, 3).join(" ")}&quot;.</p>
                             </div>
                             <div className="bg-zinc-950 p-3 rounded border border-white/[0.03]">
                               <span className="text-[#45A29E]">3. Cross-Encoder Rerank</span>
-                              <p className="text-zinc-400 mt-1">Sorted top 20 candidate chunks. Replaced ranking indexes 4 and 1.</p>
+                              <p className="text-zinc-300 mt-1">Sorted top 20 candidate chunks. Replaced ranking indexes 4 and 1.</p>
                             </div>
                           </div>
                         </motion.div>
@@ -450,11 +570,46 @@ export default function Home() {
                           <div className="p-4 bg-zinc-950 border border-white/[0.03] rounded-lg flex items-center justify-between">
                             <div>
                               <span className="text-2xl font-serif font-bold text-white">92.4%</span>
-                              <span className="text-[10px] text-zinc-400 block mt-1">Overall correctness (n=50)</span>
+                              <span className="text-[10px] text-zinc-300 block mt-1">Overall correctness (n=50)</span>
                             </div>
                             <div className="text-right">
                               <span className="text-[10px] text-green-400 font-mono block">Faithfulness: 96%</span>
                               <span className="text-[10px] text-[#45A29E] font-mono block mt-1">Citation Accuracy: 90%</span>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {activeTab === "settings" && (
+                        <motion.div
+                          key="settings-tab"
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0 }}
+                          className="space-y-4"
+                        >
+                          <h3 className="text-sm font-semibold text-white">System Configurations</h3>
+                          <div className="space-y-3">
+                            <div className="bg-zinc-950 p-3 rounded border border-white/[0.03] flex justify-between items-center text-xs">
+                              <div>
+                                <span className="text-white font-medium block">Default Temperature</span>
+                                <span className="text-[10px] text-zinc-300">Strict deterministic mode</span>
+                              </div>
+                              <span className="font-mono text-zinc-300">0.0</span>
+                            </div>
+                            <div className="bg-zinc-950 p-3 rounded border border-white/[0.03] flex justify-between items-center text-xs">
+                              <div>
+                                <span className="text-white font-medium block">Search Weights</span>
+                                <span className="text-[10px] text-zinc-300">Hybrid balance (Dense / BM25)</span>
+                              </div>
+                              <span className="font-mono text-[#45A29E]">0.7 / 0.3</span>
+                            </div>
+                            <div className="bg-zinc-950 p-3 rounded border border-white/[0.03] flex justify-between items-center text-xs">
+                              <div>
+                                <span className="text-white font-medium block">API Engine Endpoint</span>
+                                <span className="text-[10px] text-zinc-300">Secure FastAPI server</span>
+                              </div>
+                              <span className="font-mono text-zinc-300 truncate max-w-[120px]">cited.ai/api/v1</span>
                             </div>
                           </div>
                         </motion.div>
@@ -481,17 +636,13 @@ export default function Home() {
                   <div>
                     {/* Header */}
                     <div className="flex items-center justify-between mb-4 pb-2 border-b border-white/[0.03]">
-                      <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Citations</span>
-                      <span className="text-[10px] text-[#45A29E] font-semibold bg-[#45A29E]/10 border border-[#45A29E]/20 px-2 py-0.5 rounded">3 verified citations</span>
+                      <span className="text-[10px] text-zinc-300 font-bold uppercase tracking-wider font-sans">Citations</span>
+                      <span className="text-[10px] text-[#45A29E] font-semibold bg-[#45A29E]/10 border border-[#45A29E]/20 px-2 py-0.5 rounded font-sans">{mockCitations.length} verified citations</span>
                     </div>
 
                     {/* Cards */}
-                    <div className="space-y-2">
-                      {[
-                        { id: 1, name: "Q4-Report.pdf", page: "p. 34", score: 0.94 },
-                        { id: 2, name: "GDPR-Handbook.pdf", page: "p. 118", score: 0.89 },
-                        { id: 3, name: "AI-Act-Brief.pdf", page: "p. 7", score: 0.81 }
-                      ].map((cit) => {
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                      {mockCitations.map((cit) => {
                         const isHighlighted = activeCitation === cit.id;
                         return (
                           <div
@@ -524,18 +675,24 @@ export default function Home() {
                 </div>
               </div>
             </div>
-          </motion.div>
+          </div>
         </div>
       </section>
 
       {/* Page 3: Capabilities Section */}
       <section id="features" className="py-24 relative overflow-hidden">
+        {/* Section divider line */}
+        <div className="section-divider-line w-full absolute top-0" />
+
         <div className="max-w-7xl mx-auto px-6">
 
           {/* Header */}
           <div className="mb-16">
-            <span className="text-xs font-mono font-bold tracking-[0.2em] text-blue-500 uppercase block mb-4">/ CAPABILITIES</span>
-            <h2 className="text-4xl md:text-5xl font-serif text-white tracking-tight mb-4">
+            <div data-gsap-section-label className="flex items-center gap-3 mb-4">
+              <div data-gsap-label-line className="section-divider-line w-8 h-[1px]" />
+              <span data-gsap-label-text className="text-xs font-mono font-bold tracking-[0.2em] text-blue-500 uppercase">CAPABILITIES</span>
+            </div>
+            <h2 data-gsap-heading className="text-4xl md:text-5xl font-serif text-white tracking-tight mb-4">
               Retrieval that <br />
               actually retrieves.
             </h2>
@@ -545,11 +702,7 @@ export default function Home() {
           </div>
 
           {/* Grid */}
-          <motion.div
-            variants={staggerContainer}
-            initial="initial"
-            whileInView="whileInView"
-            viewport={{ once: true, margin: "-100px" }}
+          <div
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
           >
             {[
@@ -586,9 +739,9 @@ export default function Home() {
             ].map((card, idx) => {
               const Icon = card.icon;
               return (
-                <motion.div
+                <div
                   key={idx}
-                  variants={fadeInUp}
+                  data-gsap-cap-card
                   className="glass-card p-6 rounded-2xl flex flex-col justify-between group"
                 >
                   <div>
@@ -607,22 +760,28 @@ export default function Home() {
                       {card.desc}
                     </p>
                   </div>
-                </motion.div>
+                </div>
               );
             })}
-          </motion.div>
+          </div>
         </div>
       </section>
 
       {/* Page 4: Architecture Section */}
-      <section id="architecture" className="py-24 relative border-t border-white/[0.03]">
+      <section id="architecture" className="py-24 relative">
+        {/* Section divider line */}
+        <div className="section-divider-line w-full absolute top-0" />
+
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
 
             {/* Left Header Info (5 cols) */}
             <div className="lg:col-span-5 flex flex-col justify-start">
-              <span className="text-xs font-mono font-bold tracking-[0.2em] text-blue-500 uppercase block mb-4">/ ARCHITECTURE</span>
-              <h2 className="text-4xl md:text-5xl font-serif text-white tracking-tight mb-4 leading-tight">
+              <div data-gsap-section-label className="flex items-center gap-3 mb-4">
+                <div data-gsap-label-line className="section-divider-line w-8 h-[1px]" />
+                <span data-gsap-label-text className="text-xs font-mono font-bold tracking-[0.2em] text-blue-500 uppercase">ARCHITECTURE</span>
+              </div>
+              <h2 data-gsap-heading className="text-4xl md:text-5xl font-serif text-white tracking-tight mb-4 leading-tight">
                 Every stage, <br />
                 observable.
               </h2>
@@ -646,14 +805,11 @@ export default function Home() {
                 const stepNum = idx + 1;
                 const isExpanded = expandedStep === stepNum;
                 return (
-                  <motion.div
+                  <div
                     key={stepNum}
-                    initial={{ opacity: 0, x: 20 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.5, delay: idx * 0.05 }}
+                    data-gsap-arch-step
                     className={`rounded-2xl border transition-all duration-300 overflow-hidden ${isExpanded
-                      ? "bg-[#09090c] border-[#45A29E]/30 shadow-[0_4px_30px_rgba(197,168,128,0.03)]"
+                      ? "bg-[#09090c] border-[#45A29E]/30 shadow-[0_4px_30px_rgba(69,162,158,0.04)]"
                       : "bg-zinc-950/20 border-white/[0.03] hover:border-white/[0.08]"
                       }`}
                   >
@@ -705,7 +861,7 @@ export default function Home() {
                         </motion.div>
                       )}
                     </AnimatePresence>
-                  </motion.div>
+                  </div>
                 );
               })}
             </div>
@@ -714,24 +870,26 @@ export default function Home() {
       </section>
 
       {/* Page 5: Workflow Section */}
-      <section id="how-it-works" className="py-24 relative border-t border-white/[0.03]">
+      <section id="how-it-works" className="py-24 relative">
+        {/* Section divider line */}
+        <div className="section-divider-line w-full absolute top-0" />
+
         <div className="max-w-7xl mx-auto px-6">
 
           {/* Header */}
           <div className="mb-16 text-center md:text-left">
-            <span className="text-xs font-mono font-bold tracking-[0.2em] text-blue-500 uppercase block mb-4">/ WORKFLOW</span>
-            <h2 className="text-4xl md:text-5xl font-serif text-white tracking-tight mb-4">
+            <div data-gsap-section-label className="flex items-center gap-3 mb-4 justify-center md:justify-start">
+              <div data-gsap-label-line className="section-divider-line w-8 h-[1px]" />
+              <span data-gsap-label-text className="text-xs font-mono font-bold tracking-[0.2em] text-blue-500 uppercase">WORKFLOW</span>
+            </div>
+            <h2 data-gsap-heading className="text-4xl md:text-5xl font-serif text-white tracking-tight mb-4">
               Three steps. <br />
               Zero hallucinations.
             </h2>
           </div>
 
           {/* Steps Horizontal Grid */}
-          <motion.div
-            variants={staggerContainer}
-            initial="initial"
-            whileInView="whileInView"
-            viewport={{ once: true, margin: "-100px" }}
+          <div
             className="grid grid-cols-1 lg:grid-cols-3 gap-6"
           >
             {[
@@ -756,9 +914,9 @@ export default function Home() {
             ].map((wf, idx) => {
               const Icon = wf.icon;
               return (
-                <motion.div
+                <div
                   key={idx}
-                  variants={fadeInUp}
+                  data-gsap-wf-card
                   className="glass-card p-6 rounded-2xl flex flex-col justify-between text-left relative overflow-hidden group"
                 >
                   <div className="absolute top-0 right-0 w-24 h-24 bg-[#45A29E]/[0.01] rounded-bl-full pointer-events-none group-hover:bg-[#45A29E]/[0.02] transition-colors" />
@@ -784,38 +942,40 @@ export default function Home() {
                       {wf.desc}
                     </p>
                   </div>
-                </motion.div>
+                </div>
               );
             })}
-          </motion.div>
+          </div>
         </div>
       </section>
 
       {/* Page 6: Stack Section */}
-      <section id="stack" className="py-24 relative border-t border-white/[0.03]">
+      <section id="stack" className="py-24 relative">
+        {/* Section divider line */}
+        <div className="section-divider-line w-full absolute top-0" />
+
         <div className="max-w-7xl mx-auto px-6 text-center flex flex-col items-center">
 
           {/* Header */}
           <div className="mb-12">
-            <span className="text-xs font-mono font-bold tracking-[0.2em] text-blue-500 uppercase block mb-4">/ STACK</span>
-            <h2 className="text-4xl md:text-5xl font-serif text-white tracking-tight mb-4">
+            <div data-gsap-section-label className="flex items-center gap-3 mb-4 justify-center">
+              <div data-gsap-label-line className="section-divider-line w-8 h-[1px]" />
+              <span data-gsap-label-text className="text-xs font-mono font-bold tracking-[0.2em] text-blue-500 uppercase">STACK</span>
+            </div>
+            <h2 data-gsap-heading className="text-4xl md:text-5xl font-serif text-white tracking-tight mb-4">
               Built on primitives <br />
               you already trust.
             </h2>
           </div>
 
           {/* Badges Grid (Responsive Pill Layout) */}
-          <motion.div
-            variants={staggerContainer}
-            initial="initial"
-            whileInView="whileInView"
-            viewport={{ once: true }}
+          <div
             className="flex flex-wrap justify-center gap-3 max-w-4xl"
           >
             {techStack.map((tech, idx) => (
-              <motion.div
+              <div
                 key={idx}
-                variants={fadeInUp}
+                data-gsap-stack-pill
                 className="bg-zinc-950 hover:bg-zinc-900 border border-white/[0.04] hover:border-[#45A29E]/20 px-4 py-2.5 rounded-full flex items-center gap-2.5 transition-all duration-300"
               >
                 {/* Indicator dot */}
@@ -824,25 +984,25 @@ export default function Home() {
                 {/* Tech Info */}
                 <span className="text-xs font-semibold text-white">{tech.name}</span>
                 <span className="text-[10px] text-zinc-400 font-medium font-sans">({tech.category})</span>
-              </motion.div>
+              </div>
             ))}
-          </motion.div>
+          </div>
         </div>
       </section>
 
       {/* Page 7: CTA Section */}
       <section className="py-20 relative flex justify-center">
         <div className="max-w-5xl mx-auto px-6 w-full">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.98 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+          <div
+            data-gsap-cta
             className="w-full bg-[#08080c] border border-white/[0.06] rounded-3xl p-8 md:p-12 text-center relative overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
           >
             {/* Glowing accents */}
-            <div className="absolute inset-0 bg-gradient-to-t from-[#45A29E]/[0.01] to-transparent pointer-events-none" />
-            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[70%] h-[30%] bg-blue-500/[0.01] blur-2xl rounded-full pointer-events-none" />
+            {/* CTA Glow Border */}
+            <div data-gsap-cta-glow className="cta-glow-border" style={{ opacity: 0 }} />
+
+            <div className="absolute inset-0 bg-gradient-to-t from-[#45A29E]/[0.02] to-transparent pointer-events-none" />
+            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[70%] h-[30%] bg-blue-500/[0.015] blur-2xl rounded-full pointer-events-none" />
 
             <span className="text-[10px] font-mono font-bold tracking-[0.3em] text-[#45A29E] uppercase block mb-4">DEPLOY INSTANTLY</span>
             <h2 className="text-4xl md:text-5xl font-serif text-white tracking-tight mb-4 max-w-2xl mx-auto leading-tight">
@@ -854,28 +1014,28 @@ export default function Home() {
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <a href="/dashboard" className="flex items-center gap-2 bg-white hover:bg-zinc-200 text-black px-6 py-3 rounded-full text-xs font-semibold transition-all hover:scale-[1.02] shadow-[0_4px_15px_rgba(255,255,255,0.08)]">
+              <a href="/login" className="flex items-center gap-2 bg-white hover:bg-zinc-200 text-black px-6 py-3 rounded-full text-xs font-semibold transition-all hover:scale-[1.02] shadow-[0_4px_15px_rgba(255,255,255,0.08)]">
                 Get started free <ArrowRight className="w-4 h-4" />
               </a>
-              <a href="/dashboard" className="bg-zinc-900 border border-white/[0.06] hover:bg-zinc-800 text-white px-6 py-3 rounded-full text-xs font-semibold transition-all">
+              <a href="/login" className="bg-zinc-900 border border-white/[0.06] hover:bg-zinc-800 text-white px-6 py-3 rounded-full text-xs font-semibold transition-all">
                 Talk to sales
               </a>
             </div>
-          </motion.div>
+          </div>
         </div>
       </section>
 
       {/* Page 8: Footer Section */}
-      <footer className="pt-20 pb-10 border-t border-white/[0.03] bg-[#020203]">
+      <footer data-gsap-footer className="pt-20 pb-10 bg-[#020203] relative">
+        {/* Section divider line */}
+        <div className="section-divider-line w-full absolute top-0" />
+
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-8 mb-16">
 
             {/* Logo and Tagline (5 cols) */}
             <div className="lg:col-span-5 flex flex-col justify-start items-start">
               <a href="#" className="flex items-center gap-2 mb-4 group">
-                <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-white/[0.08] flex items-center justify-center">
-                  <span className="text-white font-bold text-base">C</span>
-                </div>
                 <span className="text-white font-semibold text-lg tracking-tight">Cited.AI</span>
               </a>
               <p className="text-zinc-400 text-xs leading-relaxed font-normal max-w-xs mb-4">
@@ -883,31 +1043,49 @@ export default function Home() {
               </p>
             </div>
 
-            {/* Links Columns (7 cols) */}
-            <div className="lg:col-span-7 grid grid-cols-3 gap-6">
+            {/* Links Columns (7 cols) - Carded View */}
+            <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-6">
               {[
                 {
                   title: "Product",
-                  links: ["Features", "Architecture", "Evaluation", "Pricing", "Changelog"]
+                  desc: "Fact-checked document grounded search utilizing hybrid dense/sparse pipelines to eliminate hallucinations.",
+                  links: [
+                    { name: "Features", href: "#features" },
+                    { name: "Architecture", href: "#architecture" },
+                    { name: "Evaluation", href: "#how-it-works" }
+                  ]
                 },
                 {
                   title: "Developers",
-                  links: ["Docs", "API reference", "SDK", "Cookbook", "Status"]
+                  desc: "API-first endpoints for custom applications. Streamlined chunking, indexing and fact-checking via REST.",
+                  links: [
+                    { name: "Docs & Reference", href: "/dashboard/settings" },
+                    { name: "System Status", href: "/dashboard" }
+                  ]
                 },
                 {
                   title: "Company",
-                  links: ["About", "Careers", "Security", "Privacy", "Contact"]
+                  desc: "Strict compliance frameworks, secure multi-tenant isolated vector indexes, and GDPR-ready data policies.",
+                  links: [
+                    { name: "Security Standards", href: "#" },
+                    { name: "Privacy Policy", href: "#" }
+                  ]
                 }
               ].map((col, idx) => (
-                <div key={idx} className="flex flex-col text-left">
-                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block mb-4">
+                <div key={idx} className="flex flex-col text-left p-5 bg-zinc-950/80 border border-white/[0.04] rounded-2xl relative overflow-hidden group hover:border-[#45A29E]/20 transition-all duration-300">
+                  <div className="absolute inset-0 bg-gradient-to-b from-[#45A29E]/[0.01] to-transparent pointer-events-none" />
+                  <span className="text-xs font-bold text-white uppercase tracking-wider block mb-2">
                     {col.title}
                   </span>
-                  <ul className="space-y-2.5">
+                  <p className="text-zinc-400 text-xs font-normal leading-relaxed mb-4 flex-1">
+                    {col.desc}
+                  </p>
+                  <ul className="space-y-2 border-t border-white/[0.02] pt-3">
                     {col.links.map((link, lIdx) => (
                       <li key={lIdx}>
-                        <a href="#" className="text-xs text-zinc-400 hover:text-white transition-colors font-normal">
-                          {link}
+                        <a href={link.href} className="text-xs text-[#45A29E] hover:text-white transition-colors font-medium flex items-center gap-1 group/link">
+                          <span>{link.name}</span>
+                          <span className="inline-block transform group-hover/link:translate-x-0.5 transition-transform">&rarr;</span>
                         </a>
                       </li>
                     ))}
