@@ -365,6 +365,9 @@ async def chat_completions(payload: ChatRequest):
                 }] + context_chunks[:4]
 
         # AI Guardrail: Confidence-based response filtering
+        # Strategy: only hard-refuse when ALL retrieval signals are truly weak.
+        # When scores are borderline, let the LLM judge — it already has instructions
+        # to set sufficient_context=false when the context is genuinely unhelpful.
         insufficient_context = False
         if is_asking_about_docs and uploaded_docs:
             insufficient_context = False
@@ -378,30 +381,26 @@ async def chat_completions(payload: ChatRequest):
                 f"Retrieval scores: vector={max_vector_score:.4f}, "
                 f"bm25={max_bm25_score:.2f}, rerank={max_rerank_score:.4f}."
             )
-            # Refuse query if both semantic (dense) similarity and keyword (sparse) overlap are too low
-            # Lower the vector score threshold for domain-specific profile/resume queries to prevent false rejections
-            vector_threshold = 0.58 if is_profile_query else 0.65
-            if max_vector_score < vector_threshold and max_bm25_score < 1.0:
-                insufficient_context = True
+
+            # Bypass: strong keyword match means the document clearly contains the terms
+            if max_bm25_score >= 3.0:
+                insufficient_context = False
+            # Bypass: reranker is confident the chunk is relevant to the query
+            elif max_rerank_score >= 0.5:
+                insufficient_context = False
+            else:
+                # Hard-refuse only when ALL signals are weak
+                vector_threshold = 0.40 if is_profile_query else 0.45
+                if max_vector_score < vector_threshold and max_bm25_score < 0.5:
+                    insufficient_context = True
 
         if insufficient_context:
             logger.info("Guardrail Check: Retrieval confidence below threshold. Refusing query.")
             refusal_text = "Insufficient information found in the uploaded documents."
             
-            # Store refusal in cache
-            if any(val != 0.0 for val in query_vector):
-                semantic_cache.set(
-                    query=payload.query,
-                    query_embedding=query_vector,
-                    entry_type="chat",
-                    latency_ms=int((time.perf_counter() - start_time) * 1000),
-                    rewritten_query=retrieval_query,
-                    was_rewritten=rewrite_result.was_rewritten,
-                    answer=refusal_text,
-                    citations=[],
-                    confidence_score=0.0,
-                    sufficient_context=False
-                )
+            # NOTE: We intentionally do NOT cache hard refusals.
+            # Caching refusals causes stale rejections to persist even after
+            # re-indexing or threshold changes fix the underlying retrieval.
 
             if payload.stream:
                 async def sse_insufficient_refusal():
