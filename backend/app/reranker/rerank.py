@@ -22,25 +22,25 @@ class HuggingFaceReranker(BaseReranker):
         self.model_name = model_name
         self.api_url = f"https://router.huggingface.co/hf-inference/models/{self.model_name}"
         self.headers = {"Authorization": f"Bearer {settings.HF_API_KEY}"} if settings.HF_API_KEY else {}
-        self.client = httpx.Client()
+        self.client = httpx.AsyncClient()
 
-    async def rerank_chunks(self, query: str, chunks: List[Dict[str, Any]], max_retries: int = 5) -> List[Dict[str, Any]]:
+    async def rerank_chunks(self, query: str, chunks: List[Dict[str, Any]], max_retries: int = 1) -> List[Dict[str, Any]]:
         """
         Queries Hugging Face Serverless Inference for Cross-Encoder scoring.
-        Applies exponential backoff retries on rate limits (429) or model loading (503).
-        Runs in a thread pool executor to avoid blocking FastAPI's async event loop.
+        Applies fast fallback on rate limits (429) or model loading (503) to prevent UI lag.
         """
         if not chunks:
             return []
 
         if not settings.HF_API_KEY:
-            logger.warning("HF_API_KEY is unconfigured. Returning chunks with mock Reranker scores (1.0).")
+            logger.warning("HF_API_KEY is unconfigured. Preserving pre-existing chunk rankings.")
             for chunk in chunks:
-                chunk["rerank_score"] = 1.0
+                if "rerank_score" not in chunk:
+                    chunk["rerank_score"] = float(chunk.get("vector_score", 1.0))
             return chunks
 
         # Extract text snippets to rank against the query
-        sentences = [c["text"] for c in chunks]
+        sentences = [c.get("text", "") for c in chunks]
 
         payload = {
             "inputs": {
@@ -51,19 +51,14 @@ class HuggingFaceReranker(BaseReranker):
 
         logger.info(f"Requesting rerank scores from HF Inference API for {len(chunks)} chunks...")
 
-        loop = asyncio.get_event_loop()
-
-        def _sync_rerank() -> Any:
-            return self.client.post(
-                self.api_url,
-                json=payload,
-                headers=self.headers,
-                timeout=3.5  # Fail fast to prevent UI blocking
-            )
-
-        for attempt in range(max_retries):
+        for attempt in range(max_retries + 1):
             try:
-                response = await loop.run_in_executor(None, _sync_rerank)
+                response = await self.client.post(
+                    self.api_url,
+                    json=payload,
+                    headers=self.headers,
+                    timeout=2.0  # Fast SLA ceiling
+                )
 
                 if response.status_code == 200:
                     data = response.json()
@@ -74,32 +69,25 @@ class HuggingFaceReranker(BaseReranker):
                         chunk["rerank_score"] = score
 
                     # Sort chunks descending by rerank score
-                    chunks.sort(key=lambda x: x["rerank_score"], reverse=True)
+                    chunks.sort(key=lambda x: x.get("rerank_score", 0.0), reverse=True)
                     logger.info("Successfully reranked chunks using BAAI/bge-reranker-base.")
                     return chunks
 
-                elif response.status_code == 503:
-                    delay = 2 ** attempt
-                    logger.warning(f"HF reranker model is loading (503). Retrying in {delay}s...")
-                    await asyncio.sleep(delay)
-
-                elif response.status_code == 429:
-                    delay = 2 ** attempt + 1
-                    logger.warning(f"HF reranker rate limit hit (429). Retrying in {delay}s...")
-                    await asyncio.sleep(delay)
-
+                elif response.status_code in (503, 429) and attempt < max_retries:
+                    logger.warning(f"HF reranker returned {response.status_code}. Retrying once...")
+                    await asyncio.sleep(0.5)
                 else:
-                    raise Exception(f"HF API returned error {response.status_code}: {response.text}")
+                    logger.warning(f"HF API returned status {response.status_code}. Falling back to fusion scores.")
+                    break
 
             except Exception as e:
-                logger.error(f"Error calling Hugging Face reranker: {str(e)}")
-                if attempt == max_retries - 1:
-                    logger.warning("Falling back to pre-existing fusion scores due to HF rerank failure.")
-                    return chunks
-                delay = 2 ** attempt
-                await asyncio.sleep(delay)
+                logger.warning(f"Cross-encoder reranking exception: {str(e)}. Falling back to fusion scores.")
+                break
 
-        # Safe fallback in case of loop termination without return
+        # Safe fallback: ensure all chunks have a numeric rerank_score
+        for chunk in chunks:
+            if "rerank_score" not in chunk:
+                chunk["rerank_score"] = float(chunk.get("vector_score", 0.0))
         return chunks
 
     def _parse_rerank_scores(self, data: Any, expected_count: int) -> List[float]:
@@ -129,10 +117,11 @@ class HuggingFaceReranker(BaseReranker):
         return scores[:expected_count]
 
 class VoyageReranker(BaseReranker):
-    def __init__(self, model_name: str = "voyage-rerank-2"):
+    def __init__(self, model_name: str = "rerank-2"):
         self.model_name = model_name
         self.api_url = "https://api.voyageai.com/v1/rerank"
-        self.client = httpx.Client()
+        self.client = httpx.AsyncClient()
+
 
     async def rerank_chunks(self, query: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -144,7 +133,7 @@ class VoyageReranker(BaseReranker):
         if not settings.VOYAGE_API_KEY:
             raise ValueError("VOYAGE_API_KEY is unconfigured.")
 
-        sentences = [c["text"] for c in chunks]
+        sentences = [c.get("text", "") for c in chunks]
         payload = {
             "query": query,
             "documents": sentences,
@@ -155,18 +144,13 @@ class VoyageReranker(BaseReranker):
             "Content-Type": "application/json"
         }
 
-        loop = asyncio.get_event_loop()
-
-        def _sync_voyage() -> Any:
-            logger.info(f"Requesting rerank from Voyage API for {len(chunks)} chunks...")
-            return self.client.post(
-                self.api_url,
-                json=payload,
-                headers=headers,
-                timeout=5.0
-            )
-
-        response = await loop.run_in_executor(None, _sync_voyage)
+        logger.info(f"Requesting rerank from Voyage API for {len(chunks)} chunks...")
+        response = await self.client.post(
+            self.api_url,
+            json=payload,
+            headers=headers,
+            timeout=3.0
+        )
         if response.status_code == 200:
             res_data = response.json()
             results = res_data.get("data", [])
@@ -180,7 +164,7 @@ class VoyageReranker(BaseReranker):
             # Default un-ranked chunks to 0.0 rerank score
             for c in chunks:
                 if "rerank_score" not in c:
-                    c["rerank_score"] = 0.0
+                    c["rerank_score"] = float(c.get("vector_score", 0.0))
 
             # Sort descending by score
             chunks.sort(key=lambda x: x.get("rerank_score", 0.0), reverse=True)
@@ -210,3 +194,4 @@ class GroundedReranker(BaseReranker):
 
 # Export default instanced reranker
 hf_reranker = GroundedReranker()
+

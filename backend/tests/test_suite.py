@@ -76,6 +76,40 @@ class TestRAGGuardrails(unittest.TestCase):
         self.assertEqual(data["confidence_score"], 0.0)
         self.assertFalse(data["sufficient_context"])
 
+    def test_is_general_chat_classification(self):
+        """
+        Verify that greetings are correctly separated from compound queries with document questions.
+        """
+        from app.api.endpoints.chat import is_general_chat
+        # True general chat
+        self.assertTrue(is_general_chat("hello"))
+        self.assertTrue(is_general_chat("Hi there!"))
+        self.assertTrue(is_general_chat("who are you?"))
+        self.assertTrue(is_general_chat("How do I upload a document?"))
+        self.assertTrue(is_general_chat("thank you so much"))
+        
+        # False (Document queries that happen to start with greetings)
+        self.assertFalse(is_general_chat("Hello, what were the total revenues in 2023?"))
+        self.assertFalse(is_general_chat("Hi, can you explain the risk factors in section 4?"))
+        self.assertFalse(is_general_chat("Hey, what is the EBITDA margin?"))
+
+    def test_pure_greeting_completions(self):
+        """
+        Verify that pure greetings are answered cleanly without document citations.
+        """
+        payload = {
+            "query": "Hello",
+            "stream": False
+        }
+        headers = {"X-API-Key": settings.BACKEND_API_KEY}
+        response = self.client.post("/api/v1/chat/completions", json=payload, headers=headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(len(data["citations"]), 0)
+        self.assertEqual(data["confidence_score"], 1.0)
+        self.assertTrue(data["sufficient_context"])
+
 
 class TestMultiFormatIngestion(unittest.TestCase):
     """

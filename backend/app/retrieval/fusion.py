@@ -49,18 +49,30 @@ class ReciprocalRankFusion:
         fused_results = []
         for chunk_id in sorted_chunk_ids[:limit]:
             chunk = chunk_map[chunk_id]
+            meta = chunk.get("metadata") or {}
+            doc_name = meta.get("document_name") or chunk.get("document_name") or "unknown"
+            page_num = chunk.get("page_number") or chunk.get("page") or meta.get("page") or 1
+            chunk_idx = chunk.get("chunk_index", 0)
             
             fused_chunk = {
                 "id": chunk_id,
-                "document_name": chunk["metadata"]["document_name"],
-                "page": chunk["page_number"],
-                "chunk_index": chunk["chunk_index"],
-                "text": chunk["text"],
+                "document_name": doc_name,
+                "page": page_num,
+                "page_number": page_num,
+                "chunk_index": chunk_idx,
+                "text": chunk.get("text", ""),
                 "vector_score": float(chunk.get("vector_score", 0.0)),
                 "bm25_score": float(chunk.get("bm25_score", 0.0)),
-                "rerank_score": float(rrf_scores[chunk_id])  # Place the fused RRF score in rerank_score
+                "rerank_score": float(rrf_scores[chunk_id]),  # Place the fused RRF score in rerank_score
+                "metadata": {
+                    "document_name": doc_name,
+                    "page": page_num,
+                    "heading": meta.get("heading", "Introduction"),
+                    "is_ocr": meta.get("is_ocr", False)
+                }
             }
             fused_results.append(fused_chunk)
             
         logger.info(f"Fusing completed. Returning top {len(fused_results)} results.")
         return fused_results
+

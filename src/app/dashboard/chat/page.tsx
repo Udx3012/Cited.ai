@@ -373,19 +373,20 @@ export default function ChatSandbox() {
               confidenceScore = eventData.confidence_score;
               sufficientContext = eventData.sufficient_context;
               
-              // Process and map citations to state
+              // Process and map citations to state safely
               const metaCitations: Citation[] = (eventData.citations || []).map((c: any) => ({
                 id: c.id,
-                source: c.source,
-                page: c.page,
-                chunk: c.chunk,
-                score: c.vector_score.toFixed(3),
-                bm25: c.bm25_score.toFixed(2),
-                rerank: c.rerank_score.toFixed(3),
-                text: c.matched_text
+                source: c.source || "Document",
+                page: c.page ?? 1,
+                chunk: c.chunk ?? 0,
+                score: typeof c.vector_score === 'number' ? c.vector_score.toFixed(3) : (Number(c.vector_score) || 0).toFixed(3),
+                bm25: typeof c.bm25_score === 'number' ? c.bm25_score.toFixed(2) : (Number(c.bm25_score) || 0).toFixed(2),
+                rerank: typeof c.rerank_score === 'number' ? c.rerank_score.toFixed(3) : (Number(c.rerank_score) || 0).toFixed(3),
+                text: c.matched_text || ""
               }));
               
               finalCitations = metaCitations;
+
             }
           } catch (e) {
             console.error("Failed to parse JSON stream block:", e);

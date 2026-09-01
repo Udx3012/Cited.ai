@@ -46,16 +46,19 @@ class GeminiService:
             "  \"confidence_score\": 0.95,\n"
             "  \"sufficient_context\": true\n"
             "}\n"
-            "Do not output any other text after the JSON metadata."
+            "Do not output any markdown formatting or extra text around the JSON metadata object."
         )
 
         context_str = ""
         for idx, chunk in enumerate(context_chunks):
+            doc_name = chunk.get("document_name") or chunk.get("metadata", {}).get("document_name", "unknown")
+            page_num = chunk.get("page") or chunk.get("page_number") or chunk.get("metadata", {}).get("page", 1)
+            chunk_text = chunk.get("text", "")
             context_str += (
                 f"[Index: {idx + 1}]\n"
-                f"Source Document: {chunk.get('document_name', 'unknown')}\n"
-                f"Page: {chunk.get('page', chunk.get('page_number', 1))}\n"
-                f"Content: {chunk.get('text', '')}\n"
+                f"Source Document: {doc_name}\n"
+                f"Page: {page_num}\n"
+                f"Content: {chunk_text}\n"
                 "-----------------------------------\n\n"
             )
 
@@ -103,7 +106,7 @@ class GeminiService:
         except (KeyError, IndexError):
             raise Exception(f"Unexpected response format from Gemini API: {result}")
         
-        return self._parse_raw_llm_response(raw_text)
+        return self._parse_raw_llm_response(raw_text, has_chunks=bool(context_chunks))
 
     async def generate_grounded_answer_stream(
         self, 
@@ -159,69 +162,91 @@ class GeminiService:
 
                     if not in_metadata:
                         accum += delta
-                        if delimiter in accum:
-                            parts = accum.split(delimiter)
-                            if parts[0]:
-                                yield {"type": "content", "delta": parts[0]}
-                            metadata_str = parts[1]
+                        import re
+                        match = re.search(r"\|\|\s*METADATA\s*\|\|", accum, re.IGNORECASE)
+                        if match:
+                            pre_text = accum[:match.start()]
+                            if pre_text:
+                                yield {"type": "content", "delta": pre_text}
+                            metadata_str = accum[match.end():]
                             in_metadata = True
                         else:
-                            if len(accum) > del_len:
-                                yield {"type": "content", "delta": accum[:-del_len]}
-                                accum = accum[-del_len:]
+                            if len(accum) > del_len * 2:
+                                yield {"type": "content", "delta": accum[:-del_len * 2]}
+                                accum = accum[-del_len * 2:]
                     else:
                         metadata_str += delta
 
         # Process final metadata payload
-        if in_metadata:
-            try:
-                start_idx = metadata_str.find("{")
-                end_idx = metadata_str.rfind("}")
-                if start_idx != -1 and end_idx != -1:
-                    meta_json = json.loads(metadata_str[start_idx:end_idx+1])
-                    yield {
-                        "type": "metadata",
-                        "citations": meta_json.get("citations", []),
-                        "confidence_score": meta_json.get("confidence_score", 0.0),
-                        "sufficient_context": meta_json.get("sufficient_context", True)
-                    }
-                    return
-            except Exception as parse_ex:
-                logger.error(f"Error parsing metadata JSON from stream: {str(parse_ex)}")
+        if in_metadata or metadata_str:
+            parsed = self._extract_metadata_json(metadata_str, has_chunks=bool(context_chunks))
+            yield parsed
+            return
+
+        if accum:
+            trailing_parsed = self._extract_metadata_json(accum, has_chunks=bool(context_chunks))
+            yield trailing_parsed
+            return
         
         # Fallback empty metadata if not parsed
-        yield {"type": "metadata", "citations": [], "confidence_score": 0.0, "sufficient_context": False}
+        yield {
+            "type": "metadata",
+            "citations": [],
+            "confidence_score": 0.9 if not context_chunks else 0.0,
+            "sufficient_context": not bool(context_chunks)
+        }
 
-    def _parse_raw_llm_response(self, text: str) -> Dict[str, Any]:
+    def _extract_metadata_json(self, raw_str: str, has_chunks: bool = True) -> Dict[str, Any]:
+        """
+        Extracts and cleans JSON metadata from raw strings, ignoring markdown formatting.
+        """
+        import re
+        clean_str = raw_str.replace("```json", "").replace("```", "").strip()
+        start_idx = clean_str.find("{")
+        end_idx = clean_str.rfind("}")
+        if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
+            try:
+                meta_json = json.loads(clean_str[start_idx:end_idx+1])
+                return {
+                    "type": "metadata",
+                    "citations": meta_json.get("citations", []),
+                    "confidence_score": float(meta_json.get("confidence_score", 0.9 if not has_chunks else 0.8)),
+                    "sufficient_context": bool(meta_json.get("sufficient_context", True))
+                }
+            except Exception as parse_ex:
+                logger.warning(f"Failed to parse extracted metadata JSON: {str(parse_ex)}")
+
+        return {
+            "type": "metadata",
+            "citations": [],
+            "confidence_score": 0.9 if not has_chunks else 0.0,
+            "sufficient_context": not has_chunks
+        }
+
+    def _parse_raw_llm_response(self, text: str, has_chunks: bool = True) -> Dict[str, Any]:
         """
         Parses plain text outputs containing the metadata delimiter, returning structured responses.
         """
-        delimiter = "||METADATA||"
-        if delimiter in text:
-            parts = text.split(delimiter)
-            answer = parts[0].strip()
-            metadata_str = parts[1].strip()
-            
-            try:
-                start_idx = metadata_str.find("{")
-                end_idx = metadata_str.rfind("}")
-                if start_idx != -1 and end_idx != -1:
-                    meta_json = json.loads(metadata_str[start_idx:end_idx+1])
-                    return {
-                        "answer": answer,
-                        "citations": meta_json.get("citations", []),
-                        "confidence_score": meta_json.get("confidence_score", 0.0),
-                        "sufficient_context": meta_json.get("sufficient_context", True)
-                    }
-            except Exception as e:
-                logger.error(f"Failed to parse LLM metadata JSON: {str(e)}")
+        import re
+        match = re.search(r"\|\|\s*METADATA\s*\|\|", text, re.IGNORECASE)
+        if match:
+            answer = text[:match.start()].strip()
+            metadata_str = text[match.end():].strip()
+            meta_res = self._extract_metadata_json(metadata_str, has_chunks=has_chunks)
+            return {
+                "answer": answer,
+                "citations": meta_res.get("citations", []),
+                "confidence_score": meta_res.get("confidence_score", 0.0),
+                "sufficient_context": meta_res.get("sufficient_context", True)
+            }
         
-        # Fallback if no delimiter or JSON parse fails
+        # Fallback if no delimiter
         return {
             "answer": text,
             "citations": [],
-            "confidence_score": 0.0,
-            "sufficient_context": False
+            "confidence_score": 0.9 if not has_chunks else 0.0,
+            "sufficient_context": not has_chunks
         }
+
 
 gemini_service = GeminiService()
