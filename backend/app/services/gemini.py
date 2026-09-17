@@ -175,33 +175,33 @@ class GeminiService:
                     error_body = await response.aread()
                     raise Exception(f"Gemini stream request failed: {response.status_code} - {error_body.decode()}")
             
-            async for line in response.aiter_lines():
-                if not line.strip():
-                    continue
-                if line.startswith("data: "):
-                    data_str = line[6:]
-                    try:
-                        chunk_data = json.loads(data_str)
-                        delta = chunk_data["candidates"][0]["content"]["parts"][0].get("text", "")
-                    except Exception:
+                async for line in response.aiter_lines():
+                    if not line.strip():
                         continue
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                        try:
+                            chunk_data = json.loads(data_str)
+                            delta = chunk_data["candidates"][0]["content"]["parts"][0].get("text", "")
+                        except Exception:
+                            continue
 
-                    if not in_metadata:
-                        accum += delta
-                        import re
-                        match = re.search(r"\|\|\s*METADATA\s*\|\|", accum, re.IGNORECASE)
-                        if match:
-                            pre_text = accum[:match.start()]
-                            if pre_text:
-                                yield {"type": "content", "delta": pre_text}
-                            metadata_str = accum[match.end():]
-                            in_metadata = True
+                        if not in_metadata:
+                            accum += delta
+                            import re
+                            match = re.search(r"\|\|\s*METADATA\s*\|\|", accum, re.IGNORECASE)
+                            if match:
+                                pre_text = accum[:match.start()]
+                                if pre_text:
+                                    yield {"type": "content", "delta": pre_text}
+                                metadata_str = accum[match.end():]
+                                in_metadata = True
+                            else:
+                                if len(accum) > del_len * 2:
+                                    yield {"type": "content", "delta": accum[:-del_len * 2]}
+                                    accum = accum[-del_len * 2:]
                         else:
-                            if len(accum) > del_len * 2:
-                                yield {"type": "content", "delta": accum[:-del_len * 2]}
-                                accum = accum[-del_len * 2:]
-                    else:
-                        metadata_str += delta
+                            metadata_str += delta
 
         # Process final metadata payload
         if in_metadata or metadata_str:

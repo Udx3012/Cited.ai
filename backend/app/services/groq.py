@@ -168,8 +168,7 @@ class GroqService:
                     if response.status_code != 200:
                         error_body = await response.aread()
                         logger.error(f"Groq stream request failed: {response.status_code} - {error_body.decode()}")
-                        yield {"type": "content", "delta": "Failed to stream answer from generator."}
-                        return
+                        raise Exception(f"Groq stream request failed: {response.status_code} - {error_body.decode()}")
                     
                     async for line in response.aiter_lines():
                         if not line.strip():
@@ -226,7 +225,7 @@ class GroqService:
 
         except Exception as e:
             logger.error(f"Network error in Groq stream connection: {str(e)}")
-            yield {"type": "content", "delta": f"Stream connection interrupted: {str(e)}"}
+            raise e
 
     def _extract_metadata_json(self, raw_str: str, has_chunks: bool = True) -> Dict[str, Any]:
         """
