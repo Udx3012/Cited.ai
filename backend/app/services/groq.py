@@ -1,7 +1,8 @@
+from __future__ import annotations
 import httpx
 import json
 import logging
-from typing import List, Dict, Any, AsyncGenerator
+from typing import List, Dict, Any, Optional, AsyncGenerator
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)

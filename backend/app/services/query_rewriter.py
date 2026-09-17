@@ -11,12 +11,13 @@ Design principles:
 - Observable: every result carries timing and a was_rewritten flag.
 """
 
+from __future__ import annotations
 import re
 import time
 import httpx
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, List, Dict
 
 from app.core.config import settings
 
