@@ -2,8 +2,14 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from app.schemas.retrieval import CacheStatsResponse
 
+class ChatMessage(BaseModel):
+    role: str = Field(..., description="Role of the message author, e.g. 'user' or 'assistant'")
+    content: str = Field(..., description="Message text content")
+
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=2, description="The user's conversational query")
+    history: Optional[List[ChatMessage]] = Field(default_factory=list, description="Prior conversational turns for context")
+    document_ids: Optional[List[str]] = Field(None, description="Optional document ID scoping")
     model_type: Optional[str] = Field("high", description="The LLM model complexity tier ('standard' or 'high')")
     temperature: Optional[float] = Field(0.0, ge=0.0, le=1.0, description="Model generation temperature")
     stream: Optional[bool] = Field(False, description="Toggles Server-Sent Events (SSE) token streaming")

@@ -67,6 +67,7 @@ class HuggingFaceReranker(BaseReranker):
                     # Attach scores to chunk records
                     for chunk, score in zip(chunks, scores):
                         chunk["rerank_score"] = score
+                        chunk["reranker_applied"] = True
 
                     # Sort chunks descending by rerank score
                     chunks.sort(key=lambda x: x.get("rerank_score", 0.0), reverse=True)
@@ -88,6 +89,7 @@ class HuggingFaceReranker(BaseReranker):
         for chunk in chunks:
             if "rerank_score" not in chunk:
                 chunk["rerank_score"] = float(chunk.get("vector_score", 0.0))
+            chunk["reranker_applied"] = False
         return chunks
 
     def _parse_rerank_scores(self, data: Any, expected_count: int) -> List[float]:

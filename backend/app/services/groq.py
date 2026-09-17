@@ -18,9 +18,10 @@ class GroqService:
         }
         self.client = httpx.AsyncClient()
 
-    def _build_prompts(self, query: str, context_chunks: List[Dict[str, Any]]) -> tuple:
+    def _build_prompts(self, query: str, context_chunks: List[Dict[str, Any]], history: Optional[List[Dict[str, str]]] = None) -> tuple:
         """
-        Builds the system and user prompts for grounded RAG generation.
+        Builds the system and user prompts for grounded RAG generation,
+        incorporating conversation history for multi-turn context awareness.
         """
         system_prompt = (
             "You are a helpful, extremely precise AI search assistant. Answer the user query using the provided document context chunks.\n"
@@ -67,14 +68,27 @@ class GroqService:
                 "-----------------------------------\n\n"
             )
 
+        history_str = ""
+        if history:
+            valid_h = [h for h in history if h.get("content", "").strip()]
+            if valid_h:
+                lines = [f"{h.get('role', 'user').capitalize()}: {h.get('content', '').strip()}" for h in valid_h[-4:]]
+                history_str = "Prior Conversation Context:\n" + "\n".join(lines) + "\n\n"
+
         user_prompt = (
             f"Provided Document Context Chunks:\n\n{context_str}"
+            f"{history_str}"
             f"User Query Question: {query}"
         )
 
         return system_prompt, user_prompt
 
-    async def generate_grounded_answer(self, query: str, context_chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def generate_grounded_answer(
+        self, 
+        query: str, 
+        context_chunks: List[Dict[str, Any]], 
+        history: Optional[List[Dict[str, str]]] = None
+    ) -> Dict[str, Any]:
         """
         Queries Groq LLM (non-streaming mode) and returns a structured JSON answer payload.
         """
@@ -87,7 +101,7 @@ class GroqService:
                 "sufficient_context": True
             }
 
-        system_prompt, user_prompt = self._build_prompts(query, context_chunks)
+        system_prompt, user_prompt = self._build_prompts(query, context_chunks, history=history)
         payload = {
             "model": self.model_name,
             "messages": [
@@ -99,15 +113,16 @@ class GroqService:
 
         logger.info(f"Submitting grounded generation request to Groq ({self.model_name})...")
         try:
-            response = await self.client.post(self.api_url, json=payload, headers=self.headers, timeout=30.0)
-            if response.status_code != 200:
-                logger.error(f"Groq completions failed: {response.status_code} - {response.text}")
-                raise Exception(f"Groq API error: {response.text}")
-            
-            result = response.json()
-            raw_text = result["choices"][0]["message"]["content"] or ""
-            
-            return self._parse_raw_llm_response(raw_text, has_chunks=bool(context_chunks))
+            async with httpx.AsyncClient() as client:
+                response = await client.post(self.api_url, json=payload, headers=self.headers, timeout=30.0)
+                if response.status_code != 200:
+                    logger.error(f"Groq completions failed: {response.status_code} - {response.text}")
+                    raise Exception(f"Groq API error: {response.text}")
+                
+                result = response.json()
+                raw_text = result["choices"][0]["message"]["content"] or ""
+                
+                return self._parse_raw_llm_response(raw_text, has_chunks=bool(context_chunks))
         except Exception as e:
             logger.error(f"Failed to query Groq LLM: {str(e)}")
             raise Exception(f"Failed to query grounded generator: {str(e)}")
@@ -115,7 +130,8 @@ class GroqService:
     async def generate_grounded_answer_stream(
         self, 
         query: str, 
-        context_chunks: List[Dict[str, Any]]
+        context_chunks: List[Dict[str, Any]],
+        history: Optional[List[Dict[str, str]]] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Streams response tokens (SSE) for the answer text, 
@@ -127,7 +143,7 @@ class GroqService:
             yield {"type": "metadata", "citations": [], "confidence_score": 1.0, "sufficient_context": True}
             return
 
-        system_prompt, user_prompt = self._build_prompts(query, context_chunks)
+        system_prompt, user_prompt = self._build_prompts(query, context_chunks, history=history)
         payload = {
             "model": self.model_name,
             "messages": [
@@ -146,45 +162,46 @@ class GroqService:
 
         logger.info("Submitting streaming completions request to Groq...")
         try:
-            async with self.client.stream("POST", self.api_url, json=payload, headers=self.headers, timeout=30.0) as response:
-                if response.status_code != 200:
-                    error_body = await response.aread()
-                    logger.error(f"Groq stream request failed: {response.status_code} - {error_body.decode()}")
-                    yield {"type": "content", "delta": "Failed to stream answer from generator."}
-                    return
-                
-                async for line in response.aiter_lines():
-                    if not line.strip():
-                        continue
-                    if line.startswith("data: "):
-                        data_str = line[6:]
-                        if data_str.strip() == "[DONE]":
-                            break
-                        
-                        try:
-                            chunk_data = json.loads(data_str)
-                            delta = chunk_data["choices"][0]["delta"].get("content", "")
-                        except Exception:
+            async with httpx.AsyncClient() as client:
+                async with client.stream("POST", self.api_url, json=payload, headers=self.headers, timeout=30.0) as response:
+                    if response.status_code != 200:
+                        error_body = await response.aread()
+                        logger.error(f"Groq stream request failed: {response.status_code} - {error_body.decode()}")
+                        yield {"type": "content", "delta": "Failed to stream answer from generator."}
+                        return
+                    
+                    async for line in response.aiter_lines():
+                        if not line.strip():
                             continue
+                        if line.startswith("data: "):
+                            data_str = line[6:]
+                            if data_str.strip() == "[DONE]":
+                                break
+                            
+                            try:
+                                chunk_data = json.loads(data_str)
+                                delta = chunk_data["choices"][0]["delta"].get("content", "")
+                            except Exception:
+                                continue
 
-                        if not in_metadata:
-                            accum += delta
-                            # Check for delimiter (case-insensitive and tolerant of whitespace)
-                            import re
-                            match = re.search(r"\|\|\s*METADATA\s*\|\|", accum, re.IGNORECASE)
-                            if match:
-                                pre_text = accum[:match.start()]
-                                if pre_text:
-                                    yield {"type": "content", "delta": pre_text}
-                                metadata_str = accum[match.end():]
-                                in_metadata = True
+                            if not in_metadata:
+                                accum += delta
+                                # Check for delimiter (case-insensitive and tolerant of whitespace)
+                                import re
+                                match = re.search(r"\|\|\s*METADATA\s*\|\|", accum, re.IGNORECASE)
+                                if match:
+                                    pre_text = accum[:match.start()]
+                                    if pre_text:
+                                        yield {"type": "content", "delta": pre_text}
+                                    metadata_str = accum[match.end():]
+                                    in_metadata = True
+                                else:
+                                    # Keep look-ahead window, yield the rest
+                                    if len(accum) > del_len * 2:
+                                        yield {"type": "content", "delta": accum[:-del_len * 2]}
+                                        accum = accum[-del_len * 2:]
                             else:
-                                # Keep look-ahead window, yield the rest
-                                if len(accum) > del_len * 2:
-                                    yield {"type": "content", "delta": accum[:-del_len * 2]}
-                                    accum = accum[-del_len * 2:]
-                        else:
-                            metadata_str += delta
+                                metadata_str += delta
 
             # Process final metadata payload
             if in_metadata or metadata_str:
@@ -240,26 +257,46 @@ class GroqService:
     def _parse_raw_llm_response(self, text: str, has_chunks: bool = True) -> Dict[str, Any]:
         """
         Parses plain text outputs containing the metadata delimiter, returning structured responses.
+        Falls back to trailing codeblocks or inline citation scan [1], [2] if delimiter was skipped.
         """
         import re
         match = re.search(r"\|\|\s*METADATA\s*\|\|", text, re.IGNORECASE)
+        answer = text
+        citations = []
+        confidence_score = 0.9 if not has_chunks else 0.85
+        sufficient_context = True
+
         if match:
             answer = text[:match.start()].strip()
             metadata_str = text[match.end():].strip()
             meta_res = self._extract_metadata_json(metadata_str, has_chunks=has_chunks)
-            return {
-                "answer": answer,
-                "citations": meta_res.get("citations", []),
-                "confidence_score": meta_res.get("confidence_score", 0.0),
-                "sufficient_context": meta_res.get("sufficient_context", True)
-            }
-        
-        # Fallback if no delimiter
+            citations = meta_res.get("citations", [])
+            confidence_score = meta_res.get("confidence_score", 0.85)
+            sufficient_context = meta_res.get("sufficient_context", True)
+        else:
+            # Check for trailing ```json ... ``` block
+            code_block_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text, re.IGNORECASE)
+            if code_block_match:
+                answer = text[:code_block_match.start()].strip()
+                meta_res = self._extract_metadata_json(code_block_match.group(1), has_chunks=has_chunks)
+                citations = meta_res.get("citations", [])
+                confidence_score = meta_res.get("confidence_score", 0.85)
+                sufficient_context = meta_res.get("sufficient_context", True)
+
+        # Fallback: scan for [1], [2] citation markers if citations list is empty
+        if not citations and has_chunks:
+            marker_ids = sorted(list(set(int(m) for m in re.findall(r"\[(\d+)\]", answer))))
+            for m_id in marker_ids:
+                citations.append({
+                    "id": m_id,
+                    "matched_text": ""
+                })
+
         return {
-            "answer": text,
-            "citations": [],
-            "confidence_score": 0.9 if not has_chunks else 0.0,
-            "sufficient_context": not has_chunks
+            "answer": answer,
+            "citations": citations,
+            "confidence_score": confidence_score if (citations or not has_chunks) else 0.5,
+            "sufficient_context": sufficient_context
         }
 
 
@@ -270,23 +307,29 @@ class GroundedGeneratorDispatcher:
         self.groq = GroqService()
         self.gemini = gemini_service
 
-    async def generate_grounded_answer(self, query: str, context_chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def generate_grounded_answer(
+        self, 
+        query: str, 
+        context_chunks: List[Dict[str, Any]], 
+        history: Optional[List[Dict[str, str]]] = None
+    ) -> Dict[str, Any]:
         """
         Generates grounded answer trying Gemini first, falling back to Groq Llama 3
         seamlessly if Gemini fails or is unconfigured.
         """
         if settings.GEMINI_API_KEY:
             try:
-                return await self.gemini.generate_grounded_answer(query, context_chunks)
+                return await self.gemini.generate_grounded_answer(query, context_chunks, history=history)
             except Exception as e:
                 logger.warning(f"Gemini grounded generation failed, falling back to Groq Llama 3: {str(e)}")
         
-        return await self.groq.generate_grounded_answer(query, context_chunks)
+        return await self.groq.generate_grounded_answer(query, context_chunks, history=history)
 
     async def generate_grounded_answer_stream(
         self, 
         query: str, 
-        context_chunks: List[Dict[str, Any]]
+        context_chunks: List[Dict[str, Any]],
+        history: Optional[List[Dict[str, str]]] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Streams response tokens trying Gemini stream first, falling back to Groq stream
@@ -294,13 +337,13 @@ class GroundedGeneratorDispatcher:
         """
         if settings.GEMINI_API_KEY:
             try:
-                async for event in self.gemini.generate_grounded_answer_stream(query, context_chunks):
+                async for event in self.gemini.generate_grounded_answer_stream(query, context_chunks, history=history):
                     yield event
                 return
             except Exception as e:
                 logger.warning(f"Gemini grounded streaming failed, falling back to Groq: {str(e)}")
 
-        async for event in self.groq.generate_grounded_answer_stream(query, context_chunks):
+        async for event in self.groq.generate_grounded_answer_stream(query, context_chunks, history=history):
             yield event
 
 # Export default instanced service (acts as dispatcher)

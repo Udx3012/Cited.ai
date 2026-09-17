@@ -561,5 +561,103 @@ class TestSemanticCache(unittest.TestCase):
         self.assertEqual(len(self.cache._cache), 0)
 
 
+
+class TestEngineQualityAndContextAwareness(unittest.TestCase):
+    """
+    Tests verifying multi-turn conversational context, anaphora resolution,
+    citation validation, and calibrated confidence refusal guardrails.
+    """
+
+    def setUp(self):
+        self.client = TestClient(app)
+
+    def test_chat_request_schema_with_history(self):
+        """ChatRequest parses multi-turn history messages and document_ids correctly."""
+        from app.schemas.chat import ChatRequest, ChatMessage
+        req = ChatRequest(
+            query="Who signed it?",
+            history=[
+                ChatMessage(role="user", content="What is the Acme agreement about?"),
+                ChatMessage(role="assistant", content="It is an NDA between Acme and Beta.")
+            ],
+            document_ids=["doc_123", "doc_456"]
+        )
+        self.assertEqual(len(req.history), 2)
+        self.assertEqual(req.history[0].role, "user")
+        self.assertEqual(req.history[1].content, "It is an NDA between Acme and Beta.")
+        self.assertEqual(req.document_ids, ["doc_123", "doc_456"])
+
+    def test_anaphora_and_followup_heuristics(self):
+        """_is_well_formed flags anaphora and follow-ups when history exists."""
+        from app.services.query_rewriter import _is_well_formed
+
+        # When history exists, pronouns and follow-ups must NOT be skipped as well-formed
+        self.assertFalse(_is_well_formed("Who signed it?", has_history=True))
+        self.assertFalse(_is_well_formed("And what about the second one?", has_history=True))
+        self.assertFalse(_is_well_formed("Does that include taxes?", has_history=True))
+        self.assertFalse(_is_well_formed("What about liability?", has_history=True))
+
+        # Independent clean queries without conversational words remain well-formed
+        self.assertTrue(_is_well_formed("Basel III capital adequacy ratio", has_history=False))
+        self.assertTrue(_is_well_formed("quarterly balance sheet summary 2024", has_history=False))
+
+    def test_citation_validation_helper(self):
+        """_validate_citations enriches chunk scores and drops out-of-bounds citation indices."""
+        from app.api.endpoints.chat import _validate_citations
+        context_chunks = [
+            {
+                "id": "chunk_1",
+                "document_name": "contract.pdf",
+                "page": 2,
+                "chunk_index": 0,
+                "text": "The party shall pay within thirty days of invoice receipt.",
+                "vector_score": 0.85,
+                "bm25_score": 3.5,
+                "rerank_score": 0.92
+            },
+            {
+                "id": "chunk_2",
+                "document_name": "contract.pdf",
+                "page": 5,
+                "chunk_index": 3,
+                "text": "Governing law shall be the State of New York.",
+                "vector_score": 0.72,
+                "bm25_score": 1.2,
+                "rerank_score": 0.81
+            }
+        ]
+
+        raw_cits = [
+            {"id": 1, "matched_text": "party shall pay within thirty days"},
+            {"id": 2, "matched_text": ""},  # empty snippet: should default to chunk text
+            {"id": 99, "matched_text": "non-existent chunk index"}  # out of bounds: should be dropped
+        ]
+
+        validated = _validate_citations(raw_cits, context_chunks)
+        self.assertEqual(len(validated), 2)
+        self.assertEqual(validated[0]["id"], 1)
+        self.assertEqual(validated[0]["source"], "contract.pdf")
+        self.assertEqual(validated[0]["vector_score"], 0.85)
+        self.assertEqual(validated[1]["id"], 2)
+        self.assertIn("Governing law", validated[1]["matched_text"])
+
+    def test_multi_turn_chat_completions_api(self):
+        """POST /api/v1/chat/completions accepts history payload and returns valid response."""
+        payload = {
+            "query": "Hello there!",
+            "history": [
+                {"role": "user", "content": "Hi"},
+                {"role": "assistant", "content": "Hello, how can I help you today?"}
+            ],
+            "stream": False
+        }
+        headers = {"X-API-Key": settings.BACKEND_API_KEY}
+        response = self.client.post("/api/v1/chat/completions", json=payload, headers=headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertIn("answer", data)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -13,11 +13,42 @@ from app.retrieval.bm25 import bm25_service
 from app.retrieval.fusion import ReciprocalRankFusion
 from app.reranker.rerank import hf_reranker
 from app.services.groq import groq_service
+from app.services.gemini import gemini_service
 from app.services.query_rewriter import query_rewriter
 from app.services.semantic_cache import semantic_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+def _validate_citations(raw_citations: List[Dict[str, Any]], context_chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Validates citation indices against returned context chunks, ensures matched_text
+    is populated from chunk content, and enriches records with retrieval scores.
+    """
+    validated = []
+    for c in raw_citations:
+        cit_id = c.get("id")
+        if isinstance(cit_id, int) and 1 <= cit_id <= len(context_chunks):
+            chunk = context_chunks[cit_id - 1]
+            doc_name = chunk.get("document_name") or chunk.get("metadata", {}).get("document_name", "unknown")
+            page_num = chunk.get("page") or chunk.get("page_number") or chunk.get("metadata", {}).get("page", 1)
+            chunk_txt = chunk.get("text", "")
+            
+            matched = c.get("matched_text")
+            if not matched or len(matched.strip()) < 10:
+                matched = chunk_txt[:200]
+            
+            validated.append({
+                "id": cit_id,
+                "source": doc_name,
+                "page": page_num,
+                "chunk": chunk.get("chunk_index", 0),
+                "matched_text": matched,
+                "vector_score": float(chunk.get("vector_score", 0.0)),
+                "bm25_score": float(chunk.get("bm25_score", 0.0)),
+                "rerank_score": float(chunk.get("rerank_score", 0.0))
+            })
+    return validated
 
 def is_general_chat(query_text: str) -> bool:
     """
@@ -169,17 +200,36 @@ async def chat_completions(payload: ChatRequest):
                     cache_stats=CacheStatsResponse(**semantic_cache.get_stats()),
                 )
 
+        history_dicts = [m.model_dump() for m in payload.history] if payload.history else None
+
         # --- Early Exit: General Chat / Greetings ---
         if is_general_chat(payload.query):
             logger.info("General chat query detected. Skipping retrieval pipeline.")
             context_chunks = []
             if payload.stream:
                 async def sse_general_chat_stream():
-                    async for event in groq_service.generate_grounded_answer_stream(payload.query, context_chunks):
-                        yield f"data: {json.dumps(event)}\n\n"
+                    try:
+                        async for event in groq_service.generate_grounded_answer_stream(payload.query, context_chunks, history=history_dicts):
+                            yield f"data: {json.dumps(event)}\n\n"
+                    except Exception as stream_err:
+                        logger.warning(f"Groq general chat stream failed: {stream_err}. Failing over to Gemini...")
+                        if gemini_service and gemini_service.api_key:
+                            async for event in gemini_service.generate_grounded_answer_stream(payload.query, context_chunks, history=history_dicts):
+                                yield f"data: {json.dumps(event)}\n\n"
+                        else:
+                            yield f"data: {json.dumps({'type': 'content', 'delta': 'Hello! How can I assist you today?'})}\n\n"
+                            yield f"data: {json.dumps({'type': 'metadata', 'citations': [], 'confidence_score': 1.0, 'sufficient_context': True})}\n\n"
                 return StreamingResponse(sse_general_chat_stream(), media_type="text/event-stream")
             else:
-                rag_output = await groq_service.generate_grounded_answer(payload.query, context_chunks)
+                try:
+                    rag_output = await groq_service.generate_grounded_answer(payload.query, context_chunks, history=history_dicts)
+                except Exception as groq_err:
+                    logger.warning(f"Groq general chat failed: {groq_err}. Failing over to Gemini...")
+                    if gemini_service and gemini_service.api_key:
+                        rag_output = await gemini_service.generate_grounded_answer(payload.query, context_chunks, history=history_dicts)
+                    else:
+                        rag_output = {"answer": "Hello! How can I assist you today?", "citations": [], "confidence_score": 1.0, "sufficient_context": True}
+
                 total_latency = int((time.perf_counter() - start_time) * 1000)
                 logger.info(f"General chat answered in {total_latency}ms.")
                 return ChatResponse(
@@ -198,7 +248,7 @@ async def chat_completions(payload: ChatRequest):
                 )
 
         # --- Step 1: Concurrent Pre-Flight Tasks (Embedding + BM25 + Query Rewriter) ---
-        rewrite_task = asyncio.create_task(query_rewriter.rewrite(payload.query))
+        rewrite_task = asyncio.create_task(query_rewriter.rewrite(payload.query, history=history_dicts))
         embed_task = asyncio.create_task(hf_embedder.embed_documents([payload.query]))
         bm25_task = asyncio.create_task(asyncio.to_thread(bm25_service.retrieve_sparse, payload.query, 20))
 
@@ -250,6 +300,17 @@ async def chat_completions(payload: ChatRequest):
         rewrite_result = await rewrite_task
         retrieval_query = rewrite_result.rewritten_query
         
+        # Align dense retrieval vector with rewritten query when rewriting transformed the query
+        dense_query_vector = query_vector
+        if rewrite_result.was_rewritten and retrieval_query.lower() != payload.query.lower():
+            try:
+                rewritten_vectors = await hf_embedder.embed_documents([retrieval_query])
+                if rewritten_vectors and any(val != 0.0 for val in rewritten_vectors[0]):
+                    dense_query_vector = rewritten_vectors[0]
+                    logger.info("Dense search aligned with rewritten query embedding.")
+            except Exception as e:
+                logger.warning(f"Failed to generate rewritten query embedding: {str(e)}")
+
         sparse_results = []
         try:
             sparse_results = await bm25_task
@@ -267,16 +328,33 @@ async def chat_completions(payload: ChatRequest):
             except Exception as e:
                 logger.debug(f"Rewritten BM25 expansion skipped: {str(e)}")
 
+        # Optional document_ids scoping for sparse candidates
+        if payload.document_ids:
+            target_ids = set(payload.document_ids)
+            sparse_results = [
+                c for c in sparse_results
+                if (c.get("document_id") in target_ids or str(c.get("id", "")).split("_")[0] in target_ids)
+            ]
+
         # --- Step 2: Dense Retrieval (Qdrant Cloud) ---
         dense_results = []
-        if qdrant_service.client and any(val != 0.0 for val in query_vector):
+        if qdrant_service.client and any(val != 0.0 for val in dense_query_vector):
             try:
+                search_kwargs = {
+                    "collection_name": qdrant_service.collection_name,
+                    "query": dense_query_vector,
+                    "limit": 20,
+                    "with_payload": True
+                }
+                if payload.document_ids:
+                    from qdrant_client.models import Filter, FieldCondition, MatchAny
+                    search_kwargs["query_filter"] = Filter(
+                        must=[FieldCondition(key="document_id", match=MatchAny(any=payload.document_ids))]
+                    )
+
                 search_response = await asyncio.to_thread(
                     qdrant_service.client.query_points,
-                    collection_name=qdrant_service.collection_name,
-                    query=query_vector,
-                    limit=20,
-                    with_payload=True
+                    **search_kwargs
                 )
 
                 for point in search_response.points:
@@ -309,7 +387,7 @@ async def chat_completions(payload: ChatRequest):
             dense_results=dense_results,
             sparse_results=sparse_results,
             k=60,
-            limit=15,
+            limit=20,
             dense_weight=payload.dense_weight if payload.dense_weight is not None else 0.5,
             sparse_weight=payload.sparse_weight if payload.sparse_weight is not None else 0.5
         )
@@ -320,10 +398,10 @@ async def chat_completions(payload: ChatRequest):
             try:
                 reranked_chunks = await asyncio.wait_for(
                     hf_reranker.rerank_chunks(retrieval_query, fused_chunks),
-                    timeout=2.0
+                    timeout=2.5
                 )
             except asyncio.TimeoutError:
-                logger.warning("Reranker timed out after 2.0s — using RRF order.")
+                logger.warning("Reranker timed out after 2.5s — using RRF order.")
                 reranked_chunks = fused_chunks
             except Exception as e:
                 logger.warning(f"Reranking error: {str(e)} — using RRF order.")
@@ -331,7 +409,8 @@ async def chat_completions(payload: ChatRequest):
         else:
             reranked_chunks = fused_chunks
 
-        context_chunks = reranked_chunks[:5]
+        # Expanded context window from top-5 to top-8 chunks
+        context_chunks = reranked_chunks[:8]
 
         # Intercept queries asking about what documents are uploaded/active
         uploaded_docs = []
@@ -353,15 +432,16 @@ async def chat_completions(payload: ChatRequest):
                     "vector_score": 1.0,
                     "bm25_score": 1.0,
                     "rerank_score": 1.0,
+                    "reranker_applied": True,
                     "metadata": {
                         "document_name": "System Metadata",
                         "page": 1,
                         "heading": "Active Documents",
                         "is_ocr": False
                     }
-                }] + context_chunks[:4]
+                }] + context_chunks[:7]
 
-        # Grounded Refusal Check
+        # Grounded Refusal Check (Calibrated to prevent false refusals when reranking falls back)
         insufficient_context = False
         if is_asking_about_docs and uploaded_docs:
             insufficient_context = False
@@ -371,10 +451,13 @@ async def chat_completions(payload: ChatRequest):
             max_vector_score = max(c.get("vector_score", 0.0) for c in context_chunks)
             max_bm25_score = max(c.get("bm25_score", 0.0) for c in context_chunks)
             max_rerank_score = max(c.get("rerank_score", 0.0) for c in context_chunks)
+            reranker_applied = any(c.get("reranker_applied", False) for c in context_chunks)
 
-            if max_bm25_score >= 3.0 or max_rerank_score >= 0.5:
+            if reranker_applied and max_rerank_score >= 0.40:
                 insufficient_context = False
-            elif max_vector_score < 0.40 and max_bm25_score < 0.5:
+            elif max_bm25_score >= 2.0 or max_vector_score >= 0.45:
+                insufficient_context = False
+            elif max_vector_score < 0.35 and max_bm25_score < 0.4:
                 insufficient_context = True
 
         if insufficient_context:
@@ -401,40 +484,38 @@ async def chat_completions(payload: ChatRequest):
                     cache_stats=CacheStatsResponse(**semantic_cache.get_stats()),
                 )
 
-
-        # --- Step 5: Generation (Groq / Gemini LLM) ---
+        # --- Step 5: Generation (Groq / Gemini LLM with Failover) ---
         if payload.stream:
             async def sse_event_generator():
                 accumulated_answer = ""
                 final_meta = {}
                 try:
-                    async for event in groq_service.generate_grounded_answer_stream(payload.query, context_chunks):
-                        if event.get("type") == "content":
-                            accumulated_answer += event.get("delta", "")
-                            
-                        elif event.get("type") == "metadata":
-                            # Validate citation indices and enrich with chunk scores
-                            validated_citations = []
-                            for c in event.get("citations", []):
-                                cit_id = c.get("id")
-                                if isinstance(cit_id, int) and 1 <= cit_id <= len(context_chunks):
-                                    chunk = context_chunks[cit_id - 1]
-                                    doc_name = chunk.get("document_name") or chunk.get("metadata", {}).get("document_name", "unknown")
-                                    page_num = chunk.get("page") or chunk.get("page_number") or chunk.get("metadata", {}).get("page", 1)
-                                    validated_citations.append({
-                                        "id": cit_id,
-                                        "source": doc_name,
-                                        "page": page_num,
-                                        "chunk": chunk.get("chunk_index", 0),
-                                        "matched_text": c.get("matched_text") or chunk.get("text", "")[:200],
-                                        "vector_score": float(chunk.get("vector_score", 0.0)),
-                                        "bm25_score": float(chunk.get("bm25_score", 0.0)),
-                                        "rerank_score": float(chunk.get("rerank_score", 0.0))
-                                    })
-                            event["citations"] = validated_citations
-                            final_meta = event
-                        yield f"data: {json.dumps(event)}\n\n"
-                    
+                    # Stream through primary generator with fallback
+                    try:
+                        async for event in groq_service.generate_grounded_answer_stream(
+                            payload.query, context_chunks, history=history_dicts
+                        ):
+                            if event.get("type") == "content":
+                                accumulated_answer += event.get("delta", "")
+                            elif event.get("type") == "metadata":
+                                event["citations"] = _validate_citations(event.get("citations", []), context_chunks)
+                                final_meta = event
+                            yield f"data: {json.dumps(event)}\n\n"
+                    except Exception as primary_stream_ex:
+                        logger.warning(f"Groq streaming failed: {str(primary_stream_ex)}. Failing over to Gemini...")
+                        if gemini_service and gemini_service.api_key:
+                            async for event in gemini_service.generate_grounded_answer_stream(
+                                payload.query, context_chunks, history=history_dicts
+                            ):
+                                if event.get("type") == "content":
+                                    accumulated_answer += event.get("delta", "")
+                                elif event.get("type") == "metadata":
+                                    event["citations"] = _validate_citations(event.get("citations", []), context_chunks)
+                                    final_meta = event
+                                yield f"data: {json.dumps(event)}\n\n"
+                        else:
+                            raise primary_stream_ex
+
                     # Store streaming results in semantic cache on completion
                     if accumulated_answer and any(val != 0.0 for val in query_vector):
                         latency_ms = int((time.perf_counter() - start_time) * 1000)
@@ -456,25 +537,32 @@ async def chat_completions(payload: ChatRequest):
                     
             return StreamingResponse(sse_event_generator(), media_type="text/event-stream")
         else:
-            # Sync answer generation
-            rag_output = await groq_service.generate_grounded_answer(payload.query, context_chunks)
-            
-            meta_citations = []
-            for item in rag_output.get("citations", []):
-                cit_id = item.get("id")
-                if isinstance(cit_id, int) and 1 <= cit_id <= len(context_chunks):
-                    chunk = context_chunks[cit_id - 1]
-                    doc_name = chunk.get("document_name") or chunk.get("metadata", {}).get("document_name", "unknown")
-                    page_num = chunk.get("page") or chunk.get("page_number") or chunk.get("metadata", {}).get("page", 1)
-                    meta_citations.append(
-                        CitationMeta(
-                            id=cit_id,
-                            source=doc_name,
-                            page=page_num,
-                            chunk=chunk.get("chunk_index", 0),
-                            matched_text=item.get("matched_text") or chunk.get("text", "")[:200]
-                        )
+            # Sync answer generation with automatic failover
+            rag_output = None
+            try:
+                rag_output = await groq_service.generate_grounded_answer(
+                    payload.query, context_chunks, history=history_dicts
+                )
+            except Exception as groq_err:
+                logger.warning(f"Groq generation failed: {str(groq_err)}. Failing over to Gemini...")
+                if gemini_service and gemini_service.api_key:
+                    rag_output = await gemini_service.generate_grounded_answer(
+                        payload.query, context_chunks, history=history_dicts
                     )
+                else:
+                    raise groq_err
+            
+            validated_cits = _validate_citations(rag_output.get("citations", []), context_chunks)
+            meta_citations = [
+                CitationMeta(
+                    id=item["id"],
+                    source=item["source"],
+                    page=item["page"],
+                    chunk=item["chunk"],
+                    matched_text=item["matched_text"]
+                )
+                for item in validated_cits
+            ]
             
             total_latency = int((time.perf_counter() - start_time) * 1000)
             logger.info(f"Completions query generated in {total_latency}ms.")

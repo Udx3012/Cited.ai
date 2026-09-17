@@ -310,8 +310,16 @@ export default function ChatSandbox() {
     const startTime = Date.now();
     let aiText = "";
 
+    const recentHistory = messages
+      .filter(m => !m.isStreaming && m.text.trim())
+      .slice(-6)
+      .map(m => ({
+        role: m.sender === "user" ? "user" : "assistant",
+        content: m.text
+      }));
+
     try {
-      // Submit POST request to stream completions
+      // Submit POST request to stream completions with multi-turn history
       const res = await fetch(`${backendUrl}/chat/completions`, {
         method: "POST",
         headers: {
@@ -320,6 +328,7 @@ export default function ChatSandbox() {
         },
         body: JSON.stringify({
           query: userMsg.text,
+          history: recentHistory,
           model_type: modelType,
           temperature: temperature,
           stream: true,
