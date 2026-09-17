@@ -220,7 +220,7 @@ class QueryRewriter:
         Call Groq with a fast small model to produce the rewritten query.
         Returns a passthrough result on any error or timeout.
         """
-        model = getattr(settings, "QUERY_REWRITER_MODEL", "llama-3.1-8b-instant")
+        model = getattr(settings, "QUERY_REWRITER_MODEL", "qwen/qwen3.8-27b")
 
         user_prompt = query
         if history:

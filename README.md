@@ -17,7 +17,7 @@ Cited.AI is a secure, high-performance Retrieval-Augmented Generation (RAG) syst
   │
   ▼ [ Grounding & Synthesis Pipeline ]
   ├── Tier 1 (Primary): Voyage AI (voyage-3 embeddings) & Gemini API (gemini-2.5-flash LLM)
-  └── Tier 2 (Failover): Hugging Face (BAAI/bge-large-en-v1.5 embeddings) & Groq Cloud (llama-3.3-70b-versatile LLM)
+  └── Tier 2 (Failover): Hugging Face (BAAI/bge-large-en-v1.5 embeddings) & Groq Cloud (qwen/qwen3.8-27b LLM)
 ```
 
 ### 1. Hybrid Search & Rank Fusion
@@ -32,7 +32,7 @@ Cited.AI is a secure, high-performance Retrieval-Augmented Generation (RAG) syst
 
 ### 3. Failover Generation Logic
 - **Primary Generator**: Generates answers via **Gemini 2.5 Flash** using a custom prompt instructing the model to output answers along with structured citation indices (e.g. `[1]`, `[2]`) and structured JSON metadata.
-- **Failover Dispatcher**: If the primary Voyage AI or Gemini APIs fail (due to rate-limiting, quota exhaustion, or networking issues), the dispatcher automatically routes requests to **Groq (Llama-3.3-70b-versatile)** and **Hugging Face (`bge-large-en-v1.5`)** without interrupting the user session.
+- **Failover Dispatcher**: If the primary Voyage AI or Gemini APIs fail (due to rate-limiting, quota exhaustion, or networking issues), the dispatcher automatically routes requests to **Groq (qwen/qwen3.8-27b)** and **Hugging Face (`bge-large-en-v1.5`)** without interrupting the user session.
 
 ### 4. Authentication & Security
 - **Supabase Auth**: Implements JWT-based user authentication (standard logins and Google OAuth) with session persistence.

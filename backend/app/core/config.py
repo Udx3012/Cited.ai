@@ -29,9 +29,10 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     VOYAGE_API_KEY: str = ""
 
-    # Query Rewriter settings
+    # Groq Model settings
+    GROQ_MODEL: str = "qwen/qwen3.8-27b"
     QUERY_REWRITER_ENABLED: bool = True
-    QUERY_REWRITER_MODEL: str = "llama-3.1-8b-instant"
+    QUERY_REWRITER_MODEL: str = "qwen/qwen3.8-27b"
 
     # Semantic Cache Settings
     CACHE_ENABLED: bool = True

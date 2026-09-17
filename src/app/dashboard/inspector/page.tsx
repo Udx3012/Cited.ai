@@ -192,7 +192,7 @@ export default function RAGTracer() {
               Rewrite latency: <span className="text-zinc-300 font-bold ml-0.5">{rewriteLatencyMs}ms</span>
             </span>
             <span>·</span>
-            <span>Model: <span className="text-zinc-300">llama-3.1-8b-instant</span></span>
+            <span>Model: <span className="text-zinc-300">qwen/qwen3.8-27b</span></span>
             <span>·</span>
             <span>Fallback: <span className="text-zinc-300">original query</span></span>
           </div>

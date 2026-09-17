@@ -10,7 +10,7 @@ class GroqService:
     def __init__(self):
         self.api_key = settings.GROQ_API_KEY
         self.api_url = "https://api.groq.com/openai/v1/chat/completions"
-        self.model_name = "llama-3.3-70b-versatile"
+        self.model_name = getattr(settings, "GROQ_MODEL", "qwen/qwen3.8-27b")
         
         self.headers = {
             "Authorization": f"Bearer {self.api_key}" if self.api_key else "",
@@ -314,14 +314,14 @@ class GroundedGeneratorDispatcher:
         history: Optional[List[Dict[str, str]]] = None
     ) -> Dict[str, Any]:
         """
-        Generates grounded answer trying Gemini first, falling back to Groq Llama 3
+        Generates grounded answer trying Gemini first, falling back to Groq
         seamlessly if Gemini fails or is unconfigured.
         """
         if settings.GEMINI_API_KEY:
             try:
                 return await self.gemini.generate_grounded_answer(query, context_chunks, history=history)
             except Exception as e:
-                logger.warning(f"Gemini grounded generation failed, falling back to Groq Llama 3: {str(e)}")
+                logger.warning(f"Gemini grounded generation failed, falling back to Groq: {str(e)}")
         
         return await self.groq.generate_grounded_answer(query, context_chunks, history=history)
 
