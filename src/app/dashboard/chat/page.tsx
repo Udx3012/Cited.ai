@@ -596,7 +596,7 @@ export default function ChatSandbox() {
             onKeyDown={(e) => e.key === "Enter" && handleSend()}
             disabled={isGenerating}
             placeholder="Type your question or attach a document..."
-            className="flex-1 bg-zinc-950 text-xs px-4 py-3.5 rounded-full border border-white/[0.04] focus:outline-none focus:border-[#45A29E]/30 text-zinc-200 placeholder-zinc-500 transition-all font-normal"
+            className="flex-1 bg-zinc-950 text-xs px-4 py-3.5 rounded-full border border-white/[0.04] focus:outline-none focus:border-[#45A29E]/30 text-zinc-200 placeholder-zinc-400 transition-all font-normal"
           />
           {isGenerating ? (
             <button 

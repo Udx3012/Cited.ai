@@ -273,7 +273,7 @@ class QueryRewriter:
             was_rewritten = bool(rewritten) and rewritten.lower() != query.lower()
 
             logger.info(
-                f"QueryRewriter: '{query}' → '{rewritten}' "
+                f"QueryRewriter: '{query}' -> '{rewritten}' "
                 f"(was_rewritten={was_rewritten}, latency={latency}ms, model={model})"
             )
 

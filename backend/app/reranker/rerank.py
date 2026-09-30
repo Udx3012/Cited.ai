@@ -162,11 +162,14 @@ class VoyageReranker(BaseReranker):
                 idx = item.get("index")
                 if idx is not None and 0 <= idx < len(chunks):
                     chunks[idx]["rerank_score"] = float(item.get("relevance_score", 0.0))
+                    chunks[idx]["reranker_applied"] = True
 
             # Default un-ranked chunks to 0.0 rerank score
             for c in chunks:
                 if "rerank_score" not in c:
                     c["rerank_score"] = float(c.get("vector_score", 0.0))
+                if "reranker_applied" not in c:
+                    c["reranker_applied"] = True
 
             # Sort descending by score
             chunks.sort(key=lambda x: x.get("rerank_score", 0.0), reverse=True)

@@ -13,24 +13,50 @@ class GeminiService:
         self.model_name = "gemini-2.5-flash"
         self.client = httpx.AsyncClient()
 
-    def _build_prompts(self, query: str, context_chunks: List[Dict[str, Any]], history: Optional[List[Dict[str, str]]] = None) -> tuple:
+    def _build_prompts(
+        self, 
+        query: str, 
+        context_chunks: List[Dict[str, Any]], 
+        history: Optional[List[Dict[str, str]]] = None,
+        workspace_docs: Optional[List[Dict[str, Any]]] = None
+    ) -> tuple:
         """
         Builds the system and user prompts for grounded RAG generation,
-        incorporating conversation history for multi-turn context awareness.
+        incorporating workspace document catalog and multi-turn conversation history.
         """
+        docs_catalog_lines = []
+        if workspace_docs:
+            for d in workspace_docs:
+                name = d.get("document_name") or d.get("name", "Document")
+                p_cnt = d.get("page_count") or d.get("pages", 1)
+                c_cnt = d.get("chunk_count") or d.get("chunks", 0)
+                docs_catalog_lines.append(f"- {name} ({p_cnt} pages, {c_cnt} chunks)")
+        
+        catalog_str = "\n".join(docs_catalog_lines) if docs_catalog_lines else "No documents currently uploaded."
+
         system_prompt = (
-            "You are a helpful, extremely precise AI search assistant. Answer the user query using the provided document context chunks.\n"
-            "Each chunk starts with an index identifier like [Index: N] where N is a number.\n"
-            "Ground your answer strictly inside the provided context if the query relates to the documents. Do not make assumptions or extrapolate.\n"
-            "Cite documents using their index numbers (e.g., [1], [2]) at the end of sentences that utilize that chunk's information.\n\n"
-            "However, if the query is a general greeting, farewell, expression of gratitude, or general conversational chit-chat "
-            "(e.g. 'hi', 'hello', 'who are you', 'how are you', 'thank you', etc.) that does not require information from the documents, "
-            "respond politely as a general AI assistant. In this case, do not use any citation markers. In the JSON metadata, "
-            "set sufficient_context to true, confidence_score to 1.0, and set the citations array to [].\n\n"
-            "If the query asks about the documents but the provided document context chunks do not contain enough information, follow these rules:\n"
-            "1. State clearly: \"I do not have sufficient information in the provided documents to answer this question.\"\n"
-            "2. Do not use any citation markers.\n"
-            "3. Set sufficient_context to false, confidence_score to 0.0, and clear the citations array.\n\n"
+            "You are Cited.ai, an intelligent, articulate, and precise AI research assistant.\n"
+            "Your objective is to provide comprehensive, accurate, and clearly formatted responses to the user's queries.\n\n"
+            f"=== ACTIVE WORKSPACE DOCUMENTS ===\n"
+            f"{catalog_str}\n"
+            "==================================\n\n"
+            "Answering Guidelines:\n"
+            "1. Document Inventory & Status Queries:\n"
+            "   - If the user asks what documents/files are uploaded, indexed, or available in the workspace, provide a clear, organized list based on the Active Workspace Documents catalog above.\n"
+            "   - If the user asks whether a specific document is uploaded (e.g. 'is pba document uploaded', 'do you have pba?'):\n"
+            "     * If a matching document exists in the catalog (e.g. 'pba exp 5.pdf'), confirm clearly that it is uploaded and available, and summarize its key contents using the provided context chunks.\n"
+            "     * If no matching document exists in the catalog, inform the user clearly that it is not in the uploaded documents, and mention which documents are available.\n\n"
+            "2. Grounded Content Answering & Citations:\n"
+            "   - When answering questions about document contents, ground your claims strictly in the provided document context chunks.\n"
+            "   - Each provided chunk begins with an index identifier like [Index: N]. Cite sources using bracketed numbers like [1], [2] at the end of each sentence or claim that uses information from that chunk.\n"
+            "   - Cite only from the provided chunks. Never hallucinate facts outside the provided documents.\n\n"
+            "3. Insufficient Context & Unknowns:\n"
+            "   - If the user asks a substantive question about document contents but the provided document context chunks do not contain enough information, explain specifically what is or is not available in the documents, or state clearly: \"I do not have sufficient information in the provided documents to answer this question.\"\n"
+            "   - When stating that context is insufficient, do not use any citation markers, and set sufficient_context to false, confidence_score to 0.0, citations to [].\n\n"
+            "4. Multi-Turn Conversational Fluency:\n"
+            "   - Understand conversational follow-ups, abbreviations, or single-word inquiries (e.g. 'pba?', 'contravault', 'tell me more', 'what about the salary?') within the context of prior messages and the workspace documents.\n\n"
+            "5. General Greetings & App Inquiries:\n"
+            "   - If the query is a general greeting, farewell, expression of gratitude, or general conversational chit-chat (e.g. 'hi', 'who are you', 'how does this work'), respond politely and intelligently without citations. Set sufficient_context to true, confidence_score to 1.0, and citations to [].\n\n"
             "Format your output as follows:\n"
             "Answer the query naturally, incorporating citation markers like [1], [2] at the end of sentences if using context.\n"
             "At the very end of your response, write the delimiter ||METADATA|| followed by a raw JSON object with this exact schema:\n"
@@ -82,7 +108,8 @@ class GeminiService:
         self, 
         query: str, 
         context_chunks: List[Dict[str, Any]], 
-        history: Optional[List[Dict[str, str]]] = None
+        history: Optional[List[Dict[str, str]]] = None,
+        workspace_docs: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         Queries Gemini LLM (non-streaming mode) and returns a structured JSON answer payload.
@@ -96,7 +123,7 @@ class GeminiService:
                 "sufficient_context": True
             }
 
-        system_prompt, user_prompt = self._build_prompts(query, context_chunks, history=history)
+        system_prompt, user_prompt = self._build_prompts(query, context_chunks, history=history, workspace_docs=workspace_docs)
         
         # Combine system instructions and user prompt in the Gemini contents format
         api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
@@ -133,7 +160,8 @@ class GeminiService:
         self, 
         query: str, 
         context_chunks: List[Dict[str, Any]],
-        history: Optional[List[Dict[str, str]]] = None
+        history: Optional[List[Dict[str, str]]] = None,
+        workspace_docs: Optional[List[Dict[str, Any]]] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Streams response tokens (SSE) for the answer text, 
@@ -145,7 +173,7 @@ class GeminiService:
             yield {"type": "metadata", "citations": [], "confidence_score": 1.0, "sufficient_context": True}
             return
 
-        system_prompt, user_prompt = self._build_prompts(query, context_chunks, history=history)
+        system_prompt, user_prompt = self._build_prompts(query, context_chunks, history=history, workspace_docs=workspace_docs)
         api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:streamGenerateContent?key={self.api_key}&alt=sse"
         
         payload = {

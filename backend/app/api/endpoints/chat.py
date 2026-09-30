@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 import asyncio
+import re
 import time
 import json
 import logging
@@ -110,6 +111,97 @@ def is_general_chat(query_text: str) -> bool:
     return False
 
 
+def analyze_chat_query_intent(
+    query_text: str,
+    active_docs: List[Dict[str, Any]],
+    history: Optional[List[Dict[str, str]]] = None
+) -> Dict[str, Any]:
+    """
+    Analyzes user intent with focus on document catalog questions,
+    existence checks, follow-ups, and targeted document inquiries.
+    """
+    import re
+    q = query_text.strip().lower()
+    q_clean = q.rstrip("?.-!,;:")
+
+    # 1. Listing / Catalog inquiries
+    catalog_patterns = [
+        r"\b(what|which|list|show|view|tell me|display|how many)\b.{0,30}\b(doc|docs|document|documents|pdf|pdfs|file|files|paper|papers|upload|uploaded|indexed|active|workspace)\b",
+        r"\b(what|which)\s+(is|are)\s+(there|available|uploaded|in the workspace)\b",
+        r"^(documents|files|docs|my documents|my files|list documents|list files|show files|show documents)\b",
+        r"\bany documents?\s+(uploaded|available|present|here)\b",
+    ]
+    is_catalog_query = any(bool(re.search(pat, q_clean, re.IGNORECASE)) for pat in catalog_patterns)
+
+    # 2. Check document existence / presence (e.g. "is pba document uploaded", "do you have pba?")
+    existence_patterns = [
+        r"^(is|are|do you have|did i upload|has|can you see|check if|was)\b.{0,40}\b(uploaded|available|present|in workspace|indexed|attached|there|found|in the system)\b",
+        r"\b(uploaded|indexed)\b.*\b(yet|\?|$)",
+        r"^is\s+.+\s+(document|file|pdf|doc|paper)\s+uploaded\b",
+        r"^do\s+you\s+have\s+(the\s+)?.+\s*(document|file|pdf|doc)?\??$",
+    ]
+    is_existence_query = any(bool(re.search(pat, q_clean, re.IGNORECASE)) for pat in existence_patterns)
+
+    # 3. Match against active document names (e.g. "pba", "contravault", "btech", etc.)
+    # 3. Match against active document names (e.g. "pba", "contravault", "btech", etc.)
+    matched_doc = None
+    target_tokens = set(re.findall(r"\b\w{3,}\b", q_clean))
+    words = [w.strip("?.-!,;:") for w in q_clean.split() if w.strip("?.-!,;:")]
+    query_is_short = len(words) <= 4
+
+    doc_stopwords = {
+        "document", "file", "uploaded", "what", "which", "about", "tell", "view",
+        "here", "with", "this", "that", "the", "and", "for", "from", "report",
+        "study", "studies", "notes", "algorithm", "algorithms", "program", "programming",
+        "developer", "training", "paper", "exam", "questions", "question", "sem", "semester"
+    }
+
+    best_match_score = 0
+    for doc in active_docs:
+        doc_name = doc.get("document_name", "")
+        doc_base = re.sub(r"\.(pdf|docx|txt)$", "", doc_name, flags=re.IGNORECASE).lower()
+        doc_clean_base = re.sub(r"[_\-\.]+", " ", doc_base).strip()
+        doc_tokens = set(re.findall(r"\b\w{3,}\b", doc_clean_base))
+        distinctive_doc_tokens = doc_tokens - doc_stopwords
+
+        # Exact clean base name in query
+        if doc_clean_base in q_clean or (len(doc_clean_base) >= 4 and doc_clean_base in q_clean):
+            matched_doc = doc
+            break
+
+        # For short queries (<=4 words) or explicit existence queries, match distinctive tokens
+        if query_is_short or is_existence_query:
+            overlap = target_tokens.intersection(distinctive_doc_tokens)
+            if len(overlap) > best_match_score:
+                best_match_score = len(overlap)
+                matched_doc = doc
+
+    # 4. Check if this is a follow-up inquiry referencing a document or after catalog query
+    is_followup = False
+    if len(words) <= 4:
+        if matched_doc:
+            is_followup = True
+        elif history and len(history) > 0:
+            last_bot_turn = next((h["content"].lower() for h in reversed(history) if h.get("role") == "assistant"), "")
+            # Check if last turn discussed or listed a specific document
+            for doc in active_docs:
+                d_name = doc.get("document_name", "").lower()
+                d_base = re.sub(r"\.(pdf|docx|txt)$", "", d_name).lower()
+                if (d_name and d_name in last_bot_turn) or (len(d_base) >= 4 and d_base in last_bot_turn):
+                    matched_doc = doc
+                    is_followup = True
+                    break
+            if not is_followup and ("uploaded" in last_bot_turn or "document" in last_bot_turn or "workspace" in last_bot_turn):
+                is_followup = True
+
+    return {
+        "is_catalog_query": is_catalog_query,
+        "is_existence_query": is_existence_query,
+        "matched_doc": matched_doc,
+        "is_followup": is_followup,
+    }
+
+
 @router.post("/completions")
 async def chat_completions(payload: ChatRequest):
     """
@@ -159,12 +251,18 @@ async def chat_completions(payload: ChatRequest):
             )
 
     try:
-        import re
-        doc_query_pattern = re.compile(
-            r"\b(which|what|list|show|name|available|any|all|active)\b.{0,25}\b(doc|document|pdf|file|paper|resume|upload)\b",
-            re.IGNORECASE
-        )
-        is_asking_about_docs = bool(doc_query_pattern.search(payload.query))
+        # Retrieve active uploaded documents inventory
+        active_docs = bm25_service.get_uploaded_documents()
+        if not active_docs and qdrant_service.client:
+            bm25_service.rebuild_index()
+            active_docs = bm25_service.get_uploaded_documents()
+
+        history_dicts = [m.model_dump() for m in payload.history] if payload.history else None
+        intent_info = analyze_chat_query_intent(payload.query, active_docs, history=history_dicts)
+        is_asking_about_docs = intent_info["is_catalog_query"]
+        is_existence_query = intent_info["is_existence_query"]
+        matched_doc = intent_info["matched_doc"]
+        is_doc_followup = intent_info["is_followup"]
 
         # --- Step 0.1: Exact Cache Match (Ultra-Fast Path) ---
         cache_match = semantic_cache.get_exact(payload.query, entry_type="chat")
@@ -200,8 +298,6 @@ async def chat_completions(payload: ChatRequest):
                     cache_stats=CacheStatsResponse(**semantic_cache.get_stats()),
                 )
 
-        history_dicts = [m.model_dump() for m in payload.history] if payload.history else None
-
         # --- Early Exit: General Chat / Greetings ---
         if is_general_chat(payload.query):
             logger.info("General chat query detected. Skipping retrieval pipeline.")
@@ -209,12 +305,16 @@ async def chat_completions(payload: ChatRequest):
             if payload.stream:
                 async def sse_general_chat_stream():
                     try:
-                        async for event in groq_service.generate_grounded_answer_stream(payload.query, context_chunks, history=history_dicts):
+                        async for event in groq_service.generate_grounded_answer_stream(
+                            payload.query, context_chunks, history=history_dicts, workspace_docs=active_docs
+                        ):
                             yield f"data: {json.dumps(event)}\n\n"
                     except Exception as stream_err:
                         logger.warning(f"Groq general chat stream failed: {stream_err}. Failing over to Gemini...")
                         if gemini_service and gemini_service.api_key:
-                            async for event in gemini_service.generate_grounded_answer_stream(payload.query, context_chunks, history=history_dicts):
+                            async for event in gemini_service.generate_grounded_answer_stream(
+                                payload.query, context_chunks, history=history_dicts, workspace_docs=active_docs
+                            ):
                                 yield f"data: {json.dumps(event)}\n\n"
                         else:
                             yield f"data: {json.dumps({'type': 'content', 'delta': 'Hello! How can I assist you today?'})}\n\n"
@@ -222,11 +322,15 @@ async def chat_completions(payload: ChatRequest):
                 return StreamingResponse(sse_general_chat_stream(), media_type="text/event-stream")
             else:
                 try:
-                    rag_output = await groq_service.generate_grounded_answer(payload.query, context_chunks, history=history_dicts)
+                    rag_output = await groq_service.generate_grounded_answer(
+                        payload.query, context_chunks, history=history_dicts, workspace_docs=active_docs
+                    )
                 except Exception as groq_err:
                     logger.warning(f"Groq general chat failed: {groq_err}. Failing over to Gemini...")
                     if gemini_service and gemini_service.api_key:
-                        rag_output = await gemini_service.generate_grounded_answer(payload.query, context_chunks, history=history_dicts)
+                        rag_output = await gemini_service.generate_grounded_answer(
+                            payload.query, context_chunks, history=history_dicts, workspace_docs=active_docs
+                        )
                     else:
                         rag_output = {"answer": "Hello! How can I assist you today?", "citations": [], "confidence_score": 1.0, "sufficient_context": True}
 
@@ -303,13 +407,22 @@ async def chat_completions(payload: ChatRequest):
         # Align dense retrieval vector with rewritten query when rewriting transformed the query
         dense_query_vector = query_vector
         if rewrite_result.was_rewritten and retrieval_query.lower() != payload.query.lower():
-            try:
-                rewritten_vectors = await hf_embedder.embed_documents([retrieval_query])
-                if rewritten_vectors and any(val != 0.0 for val in rewritten_vectors[0]):
-                    dense_query_vector = rewritten_vectors[0]
-                    logger.info("Dense search aligned with rewritten query embedding.")
-            except Exception as e:
-                logger.warning(f"Failed to generate rewritten query embedding: {str(e)}")
+            orig_tokens = set(re.findall(r"\b\w+\b", payload.query.lower()))
+            rewr_tokens = set(re.findall(r"\b\w+\b", retrieval_query.lower()))
+            is_substantive_change = (
+                not orig_tokens or 
+                len(orig_tokens.intersection(rewr_tokens)) / max(len(orig_tokens), 1) < 0.80
+            )
+            if is_substantive_change:
+                try:
+                    rewritten_vectors = await hf_embedder.embed_documents([retrieval_query])
+                    if rewritten_vectors and any(val != 0.0 for val in rewritten_vectors[0]):
+                        dense_query_vector = rewritten_vectors[0]
+                        logger.info("Dense search aligned with substantially rewritten query embedding.")
+                except Exception as e:
+                    logger.warning(f"Failed to generate rewritten query embedding: {str(e)}")
+            else:
+                logger.debug("Rewritten query is nearly identical to original query. Reusing primary embedding.")
 
         sparse_results = []
         try:
@@ -412,23 +525,75 @@ async def chat_completions(payload: ChatRequest):
         # Expanded context window from top-5 to top-8 chunks
         context_chunks = reranked_chunks[:8]
 
-        # Intercept queries asking about what documents are uploaded/active
-        uploaded_docs = []
+        # Process intent-driven virtual and targeted context chunks
+        uploaded_doc_names = [d["document_name"] for d in active_docs]
+        
         if is_asking_about_docs:
-            uploaded_docs = sorted(list(set(
-                c.get("document_name") or c.get("metadata", {}).get("document_name")
-                for c in bm25_service.chunks 
-                if (c.get("document_name") or c.get("metadata", {}).get("document_name"))
-            )))
-            if uploaded_docs:
-                docs_str = ", ".join(uploaded_docs)
+            if active_docs:
+                catalog_items = "\n".join([f"* {d['document_name']} ({d['page_count']} pages, {d['chunk_count']} chunks)" for d in active_docs])
+                catalog_text = f"The uploaded documents currently active in the workspace are:\n{catalog_items}"
+            else:
+                catalog_text = "There are currently no documents uploaded in the workspace."
+            
+            context_chunks = [{
+                "id": "virtual-docs-info",
+                "document_name": "System Metadata",
+                "page": 1,
+                "page_number": 1,
+                "chunk_index": 0,
+                "text": catalog_text,
+                "vector_score": 1.0,
+                "bm25_score": 1.0,
+                "rerank_score": 1.0,
+                "reranker_applied": True,
+                "metadata": {
+                    "document_name": "System Metadata",
+                    "page": 1,
+                    "heading": "Active Documents Catalog",
+                    "is_ocr": False
+                }
+            }] + context_chunks[:7]
+
+        elif is_existence_query:
+            if matched_doc:
+                doc_name = matched_doc["document_name"]
+                confirm_text = (
+                    f"Document '{doc_name}' is confirmed as uploaded and indexed in the workspace "
+                    f"({matched_doc['page_count']} pages, {matched_doc['chunk_count']} chunks)."
+                )
+                doc_chunks = bm25_service.get_chunks_for_document(doc_name, limit=6)
                 context_chunks = [{
-                    "id": "virtual-docs-info",
+                    "id": "virtual-doc-confirm",
+                    "document_name": doc_name,
+                    "page": 1,
+                    "page_number": 1,
+                    "chunk_index": 0,
+                    "text": confirm_text,
+                    "vector_score": 1.0,
+                    "bm25_score": 1.0,
+                    "rerank_score": 1.0,
+                    "reranker_applied": True,
+                    "metadata": {
+                        "document_name": doc_name,
+                        "page": 1,
+                        "heading": "Document Status",
+                        "is_ocr": False
+                    }
+                }] + doc_chunks + [c for c in context_chunks if c.get("document_name") != doc_name][:2]
+            else:
+                target_str = payload.query.strip().rstrip("?.-!,;:")
+                docs_avail = ", ".join(uploaded_doc_names) if uploaded_doc_names else "none"
+                not_found_text = (
+                    f"The requested document or topic '{target_str}' is NOT currently uploaded in the workspace. "
+                    f"Currently available workspace documents: {docs_avail}."
+                )
+                context_chunks = [{
+                    "id": "virtual-doc-notfound",
                     "document_name": "System Metadata",
                     "page": 1,
                     "page_number": 1,
                     "chunk_index": 0,
-                    "text": f"The currently uploaded and active documents in the workspace are: {docs_str}.",
+                    "text": not_found_text,
                     "vector_score": 1.0,
                     "bm25_score": 1.0,
                     "rerank_score": 1.0,
@@ -436,14 +601,22 @@ async def chat_completions(payload: ChatRequest):
                     "metadata": {
                         "document_name": "System Metadata",
                         "page": 1,
-                        "heading": "Active Documents",
+                        "heading": "Document Status",
                         "is_ocr": False
                     }
-                }] + context_chunks[:7]
+                }]
 
-        # Grounded Refusal Check (Calibrated to prevent false refusals when reranking falls back)
+        elif matched_doc and (is_doc_followup or len(payload.query.split()) <= 4):
+            doc_name = matched_doc["document_name"]
+            doc_chunks = bm25_service.get_chunks_for_document(doc_name, limit=6)
+            if doc_chunks:
+                context_chunks = doc_chunks + [c for c in context_chunks if c.get("document_name") != doc_name][:2]
+
+        # Grounded Refusal Check (Calibrated to prevent false refusals on metadata and targeted queries)
         insufficient_context = False
-        if is_asking_about_docs and uploaded_docs:
+        is_metadata_or_targeted_inquiry = is_asking_about_docs or is_existence_query or (matched_doc is not None)
+
+        if is_metadata_or_targeted_inquiry:
             insufficient_context = False
         elif not context_chunks:
             insufficient_context = True
@@ -453,12 +626,30 @@ async def chat_completions(payload: ChatRequest):
             max_rerank_score = max(c.get("rerank_score", 0.0) for c in context_chunks)
             reranker_applied = any(c.get("reranker_applied", False) for c in context_chunks)
 
-            if reranker_applied and max_rerank_score >= 0.40:
-                insufficient_context = False
-            elif max_bm25_score >= 2.0 or max_vector_score >= 0.45:
-                insufficient_context = False
-            elif max_vector_score < 0.35 and max_bm25_score < 0.4:
-                insufficient_context = True
+            if reranker_applied:
+                # Cross-encoder evaluated the query against chunks
+                if max_rerank_score >= 0.48:
+                    insufficient_context = False
+                elif max_vector_score >= 0.58:
+                    insufficient_context = False
+                else:
+                    insufficient_context = True
+            else:
+                # Fallback when reranker was unavailable
+                if max_bm25_score >= 4.0:
+                    insufficient_context = False
+                else:
+                    profile_keywords = {"accomplish", "achiev", "award", "honor", "rank", "extracurricular", "publication", "certif", "patent", "project"}
+                    is_profile_query = any(kw in payload.query.lower() for kw in profile_keywords)
+                    vector_threshold = 0.40 if is_profile_query else 0.45
+                    if max_vector_score < vector_threshold and max_bm25_score < 1.0:
+                        insufficient_context = True
+
+            logger.info(
+                f"GUARDRAIL CHECK: query='{payload.query}', meta_inq={is_metadata_or_targeted_inquiry}, "
+                f"max_vec={max_vector_score:.4f}, max_bm25={max_bm25_score:.4f}, max_rerank={max_rerank_score:.4f}, "
+                f"reranker_applied={reranker_applied}, insufficient={insufficient_context}"
+            )
 
         if insufficient_context:
             logger.info("Guardrail Check: Retrieval confidence below threshold. Refusing query.")
@@ -493,7 +684,7 @@ async def chat_completions(payload: ChatRequest):
                     # Stream through primary generator with fallback
                     try:
                         async for event in groq_service.generate_grounded_answer_stream(
-                            payload.query, context_chunks, history=history_dicts
+                            payload.query, context_chunks, history=history_dicts, workspace_docs=active_docs
                         ):
                             if event.get("type") == "content":
                                 accumulated_answer += event.get("delta", "")
@@ -505,7 +696,7 @@ async def chat_completions(payload: ChatRequest):
                         logger.warning(f"Groq streaming failed: {str(primary_stream_ex)}. Failing over to Gemini...")
                         if gemini_service and gemini_service.api_key:
                             async for event in gemini_service.generate_grounded_answer_stream(
-                                payload.query, context_chunks, history=history_dicts
+                                payload.query, context_chunks, history=history_dicts, workspace_docs=active_docs
                             ):
                                 if event.get("type") == "content":
                                     accumulated_answer += event.get("delta", "")
@@ -541,13 +732,13 @@ async def chat_completions(payload: ChatRequest):
             rag_output = None
             try:
                 rag_output = await groq_service.generate_grounded_answer(
-                    payload.query, context_chunks, history=history_dicts
+                    payload.query, context_chunks, history=history_dicts, workspace_docs=active_docs
                 )
             except Exception as groq_err:
                 logger.warning(f"Groq generation failed: {str(groq_err)}. Failing over to Gemini...")
                 if gemini_service and gemini_service.api_key:
                     rag_output = await gemini_service.generate_grounded_answer(
-                        payload.query, context_chunks, history=history_dicts
+                        payload.query, context_chunks, history=history_dicts, workspace_docs=active_docs
                     )
                 else:
                     raise groq_err
